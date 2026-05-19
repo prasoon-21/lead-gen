@@ -1,0 +1,17 @@
+agent_id: research_assistant
+version: "1.0"
+description: "General web-enabled research assistant"
+model_profile: large
+system_prompt_path: config/prompts/agents/research_assistant.txt
+response_mode: text
+allowed_tools:
+  - web_research
+  - web_search
+  - http_request
+  - json_extract
+  - rag_search
+memory_window: 8
+max_steps: 8
+max_tool_calls: 6
+max_runtime_seconds: 60
+default_context: {}

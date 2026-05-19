@@ -1,0 +1,25 @@
+tool_name: aurika_users_get_workspace_users
+description: >
+  Returns all workspace users for a tenant. Call this once per session to resolve a
+  person's name to their user id, then use that id as assigneeId, approverId, or
+  requesterId when creating or updating a task.
+base_url_env: AURIKA_OS_BASE_API_URL
+endpoint_url: /api/internal/users
+method: GET
+auth_header_name: Authorization
+auth_header_env: AURIKA_ENGAGE_INTERNAL_API_KEY
+auth_header_prefix: "Bearer "
+timeout_seconds: 15
+request_body_mode: raw_arguments
+argument_headers:
+  x-aurika-tenant-id: tenant_id
+omit_arguments_from_body:
+  - tenant_id
+input_schema:
+  type: object
+  properties:
+    tenant_id:
+      type: string
+      description: Aurika tenant id sent as the x-aurika-tenant-id header.
+  required:
+    - tenant_id

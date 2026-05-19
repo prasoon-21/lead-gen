@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic Core — Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { theme: { extend: { colors: { brand: { DEFAULT:'#6366f1', dark:'#4f46e5', light:'#818cf8' } } } } }</script>
+  <style>
+    body { background:#0f0f13; color:#e2e8f0; font-family:'Inter',system-ui,sans-serif; }
+    .card  { background:#1a1a24; border:1px solid #2a2a3a; }
+    .input { background:#12121a; border:1px solid #2a2a3a; color:#e2e8f0; }
+    .input:focus { outline:none; border-color:#6366f1; }
+    .tab-active   { border-bottom:2px solid #6366f1; color:#818cf8; }
+    .tab-inactive { border-bottom:2px solid transparent; color:#64748b; }
+    .tag  { background:#1e1e30; border:1px solid #2e2e45; }
+    pre   { white-space:pre-wrap; word-break:break-word; }
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:#12121a; }
+    ::-webkit-scrollbar-thumb { background:#2a2a3a; border-radius:3px; }
+    .spinner { animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .fade-in { animation:fadeIn .18s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    .tool-check:checked + label { border-color:#6366f1; background:#1e1e3e; color:#c4c4f0; }
+    .tool-check { display:none; }
+    textarea { resize:vertical; }
+    .cat-badge { font-size:10px; padding:1px 6px; border-radius:9999px; font-weight:600; letter-spacing:.03em; }
+    .cat-api        { background:#1f1800; color:#f59e0b; border:1px solid #78350f; }
+    .cat-knowledge  { background:#0c1e2a; color:#38bdf8; border:1px solid #075985; }
+    .cat-web        { background:#0f1f1a; color:#34d399; border:1px solid #065f46; }
+    .cat-data       { background:#1e0f23; color:#e879f9; border:1px solid #701a75; }
+    .cat-media      { background:#1a1a30; color:#818cf8; border:1px solid #3730a3; }
+    .cat-productivity { background:#1a1205; color:#fb923c; border:1px solid #7c2d12; }
+    .cat-other      { background:#1a1a24; color:#64748b; border:1px solid #2a2a3a; }
+    .status-active   { background:#052e16; color:#4ade80; border:1px solid #166534; }
+    .status-draft    { background:#1a1a24; color:#64748b; border:1px solid #2a2a3a; }
+    .status-inactive { background:#1f0f0f; color:#f87171; border:1px solid #7f1d1d; }
+    .agent-card:hover { border-color:#3730a3; }
+    .wf-card:hover    { border-color:#065f46; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ── Header ── -->
+<header class="border-b border-[#2a2a3a] px-6 py-3.5 flex items-center gap-3 flex-shrink-0">
+  <a href="/" class="w-7 h-7 rounded-lg bg-brand flex items-center justify-center text-white text-sm font-bold hover:bg-brand-dark transition-colors">A</a>
+  <span class="font-semibold text-white tracking-tight">Agentic Core</span>
+  <span class="text-[#3a3a50] text-sm ml-1">/ Studio</span>
+  <div class="ml-auto flex items-center gap-3">
+    <a href="/" class="text-xs text-[#64748b] hover:text-[#818cf8] transition-colors px-2 py-1 rounded hover:bg-[#1e1e30]">← Dashboard</a>
+    <div id="status-dot" class="w-2 h-2 rounded-full bg-yellow-500"></div>
+    <span id="status-text" class="text-xs text-[#64748b]">Connecting…</span>
+  </div>
+</header>
+
+<!-- ── Top tabs ── -->
+<div class="border-b border-[#2a2a3a] px-6 flex gap-6">
+  <button onclick="switchTab('create')"    id="tab-create"    class="tab-active py-3 text-sm font-medium">Create Agent</button>
+  <button onclick="switchTab('agents')"   id="tab-agents"    class="tab-inactive py-3 text-sm font-medium">Agent Library</button>
+  <button onclick="switchTab('workflows')" id="tab-workflows" class="tab-inactive py-3 text-sm font-medium">Workflow Library</button>
+  <button onclick="switchTab('tools')"    id="tab-tools"     class="tab-inactive py-3 text-sm font-medium">Tool Catalogue</button>
+</div>
+
+<!-- ════════════════════════ CREATE AGENT ════════════════════════ -->
+<div id="pane-create" class="max-w-3xl mx-auto px-6 py-8 space-y-6">
+
+  <!-- Toast -->
+  <div id="toast" class="hidden fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl border fade-in"></div>
+
+  <div>
+    <h1 class="text-white text-xl font-semibold">Create a New Agent</h1>
+    <p class="text-[#64748b] text-sm mt-1">Configure identity, tools, and behaviour — then save to the Agent Library.</p>
+  </div>
+
+  <!-- Basic info -->
+  <div class="card rounded-2xl p-5 space-y-4">
+    <h2 class="text-xs text-[#64748b] uppercase tracking-wider">Identity</h2>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Name <span class="text-red-400">*</span></label>
+        <input id="f-name" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="e.g. Sales Assistant" />
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Slug <span class="text-[#3a3a50] font-normal">(optional)</span></label>
+        <input id="f-slug" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="sales-assistant" />
+      </div>
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Description</label>
+      <input id="f-desc" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="What does this agent do?" />
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Tags <span class="text-[#3a3a50] font-normal">(comma separated)</span></label>
+      <input id="f-tags" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="sales, crm, outreach" />
+    </div>
+  </div>
+
+  <!-- Task / System prompt -->
+  <div class="card rounded-2xl p-5 space-y-3">
+    <h2 class="text-xs text-[#64748b] uppercase tracking-wider">Task — System Prompt</h2>
+    <p class="text-xs text-[#4a4a60]">Describe exactly what this agent should do, its persona, and any rules it must follow.</p>
+    <textarea id="f-prompt" rows="7" class="input w-full rounded-xl p-3 text-sm font-mono leading-relaxed" placeholder="You are a helpful sales assistant for Acme Corp. Your job is to..."></textarea>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Welcome message <span class="text-[#3a3a50] font-normal">(optional)</span></label>
+      <input id="f-welcome" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="Hi! How can I help you today?" />
+    </div>
+  </div>
+
+  <!-- Tool selection -->
+  <div class="card rounded-2xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-xs text-[#64748b] uppercase tracking-wider">Tools</h2>
+      <span id="tool-sel-count" class="text-xs text-[#64748b]">0 selected</span>
+    </div>
+    <p class="text-xs text-[#4a4a60]">Select the tools this agent can call during a run.</p>
+    <div id="tool-picker" class="grid grid-cols-2 gap-2">
+      <div class="text-xs text-[#64748b] col-span-2 py-4 text-center">Loading tools…</div>
+    </div>
+  </div>
+
+  <!-- Limits -->
+  <div class="card rounded-2xl p-5 space-y-4">
+    <h2 class="text-xs text-[#64748b] uppercase tracking-wider">Behaviour & Limits</h2>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Model profile</label>
+        <select id="f-model" class="input w-full rounded-lg px-3 py-2 text-sm">
+          <option value="large">large (GPT-4 / Claude 3.5)</option>
+          <option value="medium">medium (GPT-4o-mini / Haiku)</option>
+          <option value="small">small (fast & cheap)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Response mode</label>
+        <select id="f-mode" class="input w-full rounded-lg px-3 py-2 text-sm">
+          <option value="text">text</option>
+          <option value="json">json</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Max steps</label>
+        <input id="f-steps" type="number" value="8" min="1" max="50" class="input w-full rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Max tool calls</label>
+        <input id="f-toolcalls" type="number" value="6" min="0" max="50" class="input w-full rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Memory window</label>
+        <input id="f-memory" type="number" value="6" min="1" max="50" class="input w-full rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-[#94a3b8] mb-1 block">Max runtime (sec)</label>
+        <input id="f-runtime" type="number" value="45" min="5" max="300" class="input w-full rounded-lg px-3 py-2 text-sm" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <button onclick="createAgent()" class="w-full bg-brand hover:bg-brand-dark text-white rounded-xl py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+    <svg id="create-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+    <span id="create-btn-text">Save Agent to Library</span>
+  </button>
+</div>
+
+<!-- ════════════════════════ AGENT LIBRARY ════════════════════════ -->
+<div id="pane-agents" class="hidden max-w-5xl mx-auto px-6 py-8 space-y-5">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-white text-xl font-semibold">Agent Library</h1>
+      <p class="text-[#64748b] text-sm mt-1">All agents registered in the directory.</p>
+    </div>
+    <button onclick="switchTab('create')" class="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-2 rounded-lg transition-colors">+ New Agent</button>
+  </div>
+  <div id="agents-grid" class="grid grid-cols-1 gap-3">
+    <div class="text-xs text-[#64748b] py-12 text-center">Loading agents…</div>
+  </div>
+</div>
+
+<!-- ════════════════════════ WORKFLOW LIBRARY ════════════════════════ -->
+<div id="pane-workflows" class="hidden max-w-5xl mx-auto px-6 py-8 space-y-5">
+  <div>
+    <h1 class="text-white text-xl font-semibold">Workflow Library</h1>
+    <p class="text-[#64748b] text-sm mt-1">All registered workflows. Select one to inspect nodes or run it.</p>
+  </div>
+  <div id="workflows-grid" class="grid grid-cols-1 gap-3">
+    <div class="text-xs text-[#64748b] py-12 text-center">Loading workflows…</div>
+  </div>
+
+  <!-- Workflow detail panel -->
+  <div id="wf-detail" class="hidden card rounded-2xl overflow-hidden">
+    <div class="border-b border-[#2a2a3a] px-5 py-3 flex items-center justify-between">
+      <div>
+        <span id="wf-detail-title" class="text-white font-semibold text-sm"></span>
+        <span id="wf-detail-desc"  class="text-[#64748b] text-xs ml-3"></span>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="openRunModal()" class="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg transition-colors">Run Workflow</button>
+        <button onclick="closeWfDetail()" class="text-xs text-[#64748b] hover:text-white px-2 py-1.5">✕</button>
+      </div>
+    </div>
+    <div id="wf-nodes-panel" class="p-5 space-y-0 max-h-[50vh] overflow-y-auto">
+      <div class="text-xs text-[#64748b] text-center py-6">Loading nodes…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ TOOL CATALOGUE ════════════════════════ -->
+<div id="pane-tools" class="hidden max-w-5xl mx-auto px-6 py-8 space-y-5">
+  <div>
+    <h1 class="text-white text-xl font-semibold">Tool Catalogue</h1>
+    <p class="text-[#64748b] text-sm mt-1">Every tool registered in the runtime. Click a tool to see its parameters.</p>
+  </div>
+
+  <!-- Category filter -->
+  <div id="cat-filters" class="flex flex-wrap gap-2">
+    <button onclick="filterCat('all')" data-cat="all" class="cat-btn text-xs px-3 py-1.5 rounded-full border border-[#2a2a3a] bg-[#1a1a24] text-white transition-colors">All</button>
+  </div>
+
+  <div id="tools-catalogue" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="text-xs text-[#64748b] py-12 text-center col-span-2">Loading tools…</div>
+  </div>
+</div>
+
+<!-- ════════════════════════ RUN WORKFLOW MODAL ════════════════════════ -->
+<div id="run-modal" class="hidden fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+  <div class="card rounded-2xl w-full max-w-lg space-y-4 p-6 fade-in">
+    <div class="flex items-center justify-between">
+      <h3 class="text-white font-semibold">Run Workflow</h3>
+      <button onclick="closeRunModal()" class="text-[#64748b] hover:text-white text-lg leading-none">✕</button>
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Message / Payload</label>
+      <textarea id="run-message" rows="4" class="input w-full rounded-xl p-3 text-sm" placeholder='{"message": "Hello"}'></textarea>
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Session ID <span class="text-[#3a3a50] font-normal">(optional)</span></label>
+      <input id="run-session" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="Auto-generated" />
+    </div>
+    <button onclick="runWorkflow()" class="w-full bg-brand hover:bg-brand-dark text-white rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+      <svg id="run-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+      <span id="run-btn-text">Run</span>
+    </button>
+    <div id="run-result" class="hidden card rounded-xl p-4 max-h-64 overflow-y-auto">
+      <div class="text-xs text-[#64748b] mb-2 uppercase tracking-wider">Result</div>
+      <pre id="run-result-pre" class="text-xs text-[#c4c4d4]"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ AGENT RUN MODAL ════════════════════════ -->
+<div id="agent-run-modal" class="hidden fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+  <div class="card rounded-2xl w-full max-w-lg space-y-4 p-6 fade-in">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-white font-semibold">Run Agent</h3>
+        <p id="arm-name" class="text-xs text-[#64748b] mt-0.5"></p>
+      </div>
+      <button onclick="closeAgentRunModal()" class="text-[#64748b] hover:text-white text-lg leading-none">✕</button>
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Message <span class="text-red-400">*</span></label>
+      <textarea id="arm-message" rows="3" class="input w-full rounded-xl p-3 text-sm" placeholder="What do you want to ask?"></textarea>
+    </div>
+    <div>
+      <label class="text-xs text-[#94a3b8] mb-1 block">Context JSON <span class="text-[#3a3a50] font-normal">(optional)</span></label>
+      <textarea id="arm-context" rows="2" class="input w-full rounded-xl p-3 text-sm font-mono" spellcheck="false">{}</textarea>
+    </div>
+    <div id="arm-warning" class="hidden text-xs text-yellow-400 bg-[#1f1800] border border-[#78350f] rounded-lg px-3 py-2">
+      This agent is not active. Activate it first from the Agent Library.
+    </div>
+    <button id="arm-run-btn" onclick="runAgent()" class="w-full bg-brand hover:bg-brand-dark text-white rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+      <svg id="arm-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+      <span id="arm-btn-text">Run Agent</span>
+    </button>
+    <div id="arm-result" class="hidden card rounded-xl p-4 max-h-64 overflow-y-auto">
+      <div class="text-xs text-[#64748b] mb-2 uppercase tracking-wider">Response</div>
+      <pre id="arm-result-pre" class="text-xs text-[#c4c4d4] leading-relaxed"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let allTools          = []
+let selectedToolNames = new Set()
+let activeCat         = 'all'
+let selectedWorkflow  = null
+let selectedAgent     = null
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────────────────────
+async function init() {
+  checkHealth()
+  loadToolPicker()
+}
+
+async function checkHealth() {
+  try {
+    const ok = (await fetch('/health')).ok
+    document.getElementById('status-dot').className  = `w-2 h-2 rounded-full ${ok?'bg-green-500':'bg-red-500'}`
+    document.getElementById('status-text').textContent = ok ? 'Online' : 'Offline'
+  } catch {
+    document.getElementById('status-dot').className  = 'w-2 h-2 rounded-full bg-red-500'
+    document.getElementById('status-text').textContent = 'Offline'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────────────────────────────────────
+const TABS = ['create','agents','workflows','tools']
+
+function switchTab(tab) {
+  TABS.forEach(t => {
+    document.getElementById(`tab-${t}`).className =
+      t === tab ? 'tab-active py-3 text-sm font-medium'
+                : 'tab-inactive py-3 text-sm font-medium'
+    document.getElementById(`pane-${t}`).classList.toggle('hidden', t !== tab)
+  })
+
+  if (tab === 'agents'    && !document.getElementById('agents-grid').dataset.loaded)    loadAgentLibrary()
+  if (tab === 'workflows' && !document.getElementById('workflows-grid').dataset.loaded) loadWorkflowLibrary()
+  if (tab === 'tools'     && !document.getElementById('tools-catalogue').dataset.loaded) loadToolCatalogue()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool Picker (Create Agent tab)
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadToolPicker() {
+  try {
+    allTools = await fetch('/api/studio/tools').then(r => r.json())
+    renderToolPicker()
+  } catch(e) {
+    document.getElementById('tool-picker').innerHTML =
+      '<div class="text-xs text-red-400 col-span-2 py-4 text-center">Failed to load tools: ' + e.message + '</div>'
+  }
+}
+
+function renderToolPicker() {
+  const el = document.getElementById('tool-picker')
+  if (!allTools.length) {
+    el.innerHTML = '<div class="text-xs text-[#64748b] col-span-2 py-4 text-center">No tools available</div>'
+    return
+  }
+
+  const cats = [...new Set(allTools.map(t => t.category))]
+  let html = ''
+  for (const cat of cats) {
+    const catTools = allTools.filter(t => t.category === cat)
+    html += `<div class="col-span-2"><div class="text-xs text-[#3a3a50] uppercase tracking-wider mb-2 mt-1">${cat}</div><div class="grid grid-cols-2 gap-2">`
+    for (const tool of catTools) {
+      const authTag = tool.requires_auth
+        ? '<span class="text-[#f59e0b] text-[10px] ml-1">auth</span>' : ''
+      html += `
+        <div>
+          <input type="checkbox" class="tool-check" id="tc-${tool.name}" name="tool" value="${tool.name}"
+            onchange="onToolCheck(this)" />
+          <label for="tc-${tool.name}"
+            class="flex items-start gap-2.5 cursor-pointer card rounded-lg px-3 py-2.5 border transition-colors hover:border-[#4a4a6a]">
+            <div class="w-4 h-4 rounded flex-shrink-0 mt-0.5 flex items-center justify-center border border-[#2a2a3a] text-[10px] check-icon">✓</div>
+            <div class="min-w-0">
+              <div class="text-xs font-mono text-[#c4c4d4] flex items-center gap-1">${tool.name}${authTag}</div>
+              <div class="text-[11px] text-[#4a4a60] mt-0.5 leading-snug line-clamp-2">${escHtml(tool.description)}</div>
+            </div>
+          </label>
+        </div>`
+    }
+    html += '</div></div>'
+  }
+  el.innerHTML = html
+}
+
+function onToolCheck(cb) {
+  if (cb.checked) selectedToolNames.add(cb.value)
+  else selectedToolNames.delete(cb.value)
+  document.getElementById('tool-sel-count').textContent = selectedToolNames.size + ' selected'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Create Agent
+// ─────────────────────────────────────────────────────────────────────────────
+async function createAgent() {
+  const name = document.getElementById('f-name').value.trim()
+  const prompt = document.getElementById('f-prompt').value.trim()
+  if (!name) { showToast('Name is required', 'error'); return }
+  if (!prompt) { showToast('System prompt (task) is required', 'error'); return }
+
+  const tagsRaw = document.getElementById('f-tags').value.trim()
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : []
+
+  const body = {
+    name,
+    slug: document.getElementById('f-slug').value.trim() || undefined,
+    description: document.getElementById('f-desc').value.trim(),
+    system_prompt: prompt,
+    welcome_message: document.getElementById('f-welcome').value.trim() || undefined,
+    tags,
+    model_profile: document.getElementById('f-model').value,
+    response_mode: document.getElementById('f-mode').value,
+    allowed_tools: [...selectedToolNames],
+    max_steps: parseInt(document.getElementById('f-steps').value) || 8,
+    max_tool_calls: parseInt(document.getElementById('f-toolcalls').value) || 6,
+    memory_window: parseInt(document.getElementById('f-memory').value) || 6,
+    max_runtime_seconds: parseInt(document.getElementById('f-runtime').value) || 45,
+  }
+
+  document.getElementById('create-spin').classList.remove('hidden')
+  document.getElementById('create-btn-text').textContent = 'Saving…'
+
+  try {
+    const r = await fetch('/api/directory/agents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data))
+    showToast('Agent saved! View it in the Agent Library.', 'success')
+    // Reset form
+    document.getElementById('f-name').value = ''
+    document.getElementById('f-slug').value = ''
+    document.getElementById('f-desc').value = ''
+    document.getElementById('f-prompt').value = ''
+    document.getElementById('f-welcome').value = ''
+    document.getElementById('f-tags').value = ''
+    selectedToolNames.clear()
+    document.querySelectorAll('.tool-check').forEach(cb => cb.checked = false)
+    document.getElementById('tool-sel-count').textContent = '0 selected'
+    // Invalidate library cache
+    document.getElementById('agents-grid').removeAttribute('data-loaded')
+  } catch(e) {
+    showToast(e.message, 'error')
+  } finally {
+    document.getElementById('create-spin').classList.add('hidden')
+    document.getElementById('create-btn-text').textContent = 'Save Agent to Library'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent Library
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadAgentLibrary() {
+  const grid = document.getElementById('agents-grid')
+  grid.innerHTML = '<div class="text-xs text-[#64748b] py-12 text-center col-span-2">Loading agents…</div>'
+  try {
+    const agents = await fetch('/api/directory/agents').then(r => r.json())
+    grid.dataset.loaded = '1'
+    if (!agents.length) {
+      grid.innerHTML = '<div class="text-xs text-[#64748b] py-12 text-center col-span-2">No agents yet. Create one above.</div>'
+      return
+    }
+    grid.innerHTML = agents.map(ag => renderAgentCard(ag)).join('')
+  } catch(e) {
+    grid.innerHTML = `<div class="text-xs text-red-400 py-8 text-center col-span-2">Failed: ${e.message}</div>`
+  }
+}
+
+function renderAgentCard(ag) {
+  const statusCls = ag.status === 'active' ? 'status-active' : ag.status === 'draft' ? 'status-draft' : 'status-inactive'
+  const tools = (ag.allowed_tools || [])
+  const toolTags = tools.slice(0,5).map(t => `<span class="tag text-[11px] px-1.5 py-0.5 rounded font-mono text-[#34d399]">${t}</span>`).join('')
+  const moreTools = tools.length > 5 ? `<span class="text-[11px] text-[#3a3a50]">+${tools.length-5} more</span>` : ''
+  const tags = (ag.tags || []).map(t => `<span class="tag text-[11px] px-2 py-0.5 rounded text-[#94a3b8]">${escHtml(t)}</span>`).join('')
+
+  return `
+  <div class="agent-card card rounded-2xl p-5 transition-colors fade-in">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-white font-semibold text-sm">${escHtml(ag.name || ag.agent_id)}</span>
+          <span class="cat-badge ${statusCls}">${ag.status || 'draft'}</span>
+          ${ag.slug ? `<span class="text-[11px] text-[#3a3a50] font-mono">${ag.slug}</span>` : ''}
+        </div>
+        ${ag.description ? `<p class="text-xs text-[#64748b] mt-1 leading-snug">${escHtml(ag.description)}</p>` : ''}
+        ${tags ? `<div class="flex gap-1 flex-wrap mt-2">${tags}</div>` : ''}
+        ${tools.length ? `<div class="flex gap-1.5 flex-wrap mt-2 items-center">${toolTags}${moreTools}</div>` : ''}
+      </div>
+      <div class="flex flex-col gap-2 flex-shrink-0">
+        <button onclick="openAgentRunModal(${JSON.stringify(escHtml(JSON.stringify(ag)))})"
+          class="text-xs bg-brand hover:bg-brand-dark text-white px-3 py-1.5 rounded-lg transition-colors">Run</button>
+        ${ag.status !== 'active'
+          ? `<button onclick="activateAgent('${ag.agent_id}')" class="text-xs border border-[#065f46] text-[#34d399] hover:bg-[#0f1f1a] px-3 py-1.5 rounded-lg transition-colors">Activate</button>`
+          : `<button onclick="deactivateAgent('${ag.agent_id}')" class="text-xs border border-[#2a2a3a] text-[#64748b] hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors">Deactivate</button>`
+        }
+      </div>
+    </div>
+    <div class="flex gap-4 mt-3 pt-3 border-t border-[#2a2a3a] text-[11px] text-[#3a3a50]">
+      <span>model: <span class="text-[#94a3b8]">${ag.model_profile || 'large'}</span></span>
+      <span>steps: <span class="text-[#94a3b8]">${ag.max_steps || 8}</span></span>
+      <span>tools: <span class="text-[#94a3b8]">${tools.length}</span></span>
+      <span>mode: <span class="text-[#94a3b8]">${ag.response_mode || 'text'}</span></span>
+      ${ag.agent_id ? `<span class="ml-auto font-mono text-[#2a2a3a]">${ag.agent_id.slice(0,18)}</span>` : ''}
+    </div>
+  </div>`
+}
+
+async function activateAgent(id) {
+  try {
+    const r = await fetch(`/api/directory/agents/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'active' }),
+    })
+    if (!r.ok) throw new Error((await r.json()).detail)
+    showToast('Agent activated', 'success')
+    document.getElementById('agents-grid').removeAttribute('data-loaded')
+    loadAgentLibrary()
+  } catch(e) { showToast(e.message, 'error') }
+}
+
+async function deactivateAgent(id) {
+  try {
+    const r = await fetch(`/api/directory/agents/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'inactive' }),
+    })
+    if (!r.ok) throw new Error((await r.json()).detail)
+    showToast('Agent deactivated', 'success')
+    document.getElementById('agents-grid').removeAttribute('data-loaded')
+    loadAgentLibrary()
+  } catch(e) { showToast(e.message, 'error') }
+}
+
+function openAgentRunModal(agJson) {
+  selectedAgent = JSON.parse(agJson)
+  document.getElementById('arm-name').textContent = selectedAgent.name || selectedAgent.agent_id
+  document.getElementById('arm-message').value = ''
+  document.getElementById('arm-context').value = '{}'
+  document.getElementById('arm-result').classList.add('hidden')
+  const isActive = selectedAgent.status === 'active'
+  document.getElementById('arm-warning').classList.toggle('hidden', isActive)
+  document.getElementById('arm-run-btn').disabled = !isActive
+  document.getElementById('arm-run-btn').classList.toggle('opacity-50', !isActive)
+  document.getElementById('agent-run-modal').classList.remove('hidden')
+}
+
+function closeAgentRunModal() {
+  document.getElementById('agent-run-modal').classList.add('hidden')
+  selectedAgent = null
+}
+
+async function runAgent() {
+  if (!selectedAgent) return
+  const msg = document.getElementById('arm-message').value.trim()
+  if (!msg) { showToast('Message is required', 'error'); return }
+  let ctx = {}
+  try { ctx = JSON.parse(document.getElementById('arm-context').value || '{}') } catch { showToast('Invalid context JSON', 'error'); return }
+
+  document.getElementById('arm-spin').classList.remove('hidden')
+  document.getElementById('arm-btn-text').textContent = 'Running…'
+  document.getElementById('arm-result').classList.add('hidden')
+
+  try {
+    const r = await fetch(`/api/directory/agents/${selectedAgent.agent_id}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, context: ctx }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data))
+    document.getElementById('arm-result-pre').textContent =
+      data.text || JSON.stringify(data.json_result || data, null, 2)
+    document.getElementById('arm-result').classList.remove('hidden')
+  } catch(e) {
+    document.getElementById('arm-result-pre').textContent = 'Error: ' + e.message
+    document.getElementById('arm-result').classList.remove('hidden')
+  } finally {
+    document.getElementById('arm-spin').classList.add('hidden')
+    document.getElementById('arm-btn-text').textContent = 'Run Agent'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workflow Library
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadWorkflowLibrary() {
+  const grid = document.getElementById('workflows-grid')
+  grid.innerHTML = '<div class="text-xs text-[#64748b] py-12 text-center">Loading workflows…</div>'
+  try {
+    const { workflows } = await fetch('/api/workflow/list').then(r => r.json())
+    grid.dataset.loaded = '1'
+    if (!workflows.length) {
+      grid.innerHTML = '<div class="text-xs text-[#64748b] py-12 text-center">No workflows found.</div>'
+      return
+    }
+    grid.innerHTML = workflows.map(wf => `
+      <div class="wf-card card rounded-2xl p-5 transition-colors fade-in cursor-pointer" onclick="loadWfDetail('${wf.workflow_id}', ${JSON.stringify(escHtml(wf.description||''))})">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-mono text-sm text-white font-semibold">${wf.workflow_id}</div>
+            ${wf.description ? `<p class="text-xs text-[#64748b] mt-1">${escHtml(wf.description)}</p>` : ''}
+          </div>
+          <button onclick="event.stopPropagation(); selectWfAndRun('${wf.workflow_id}', ${JSON.stringify(escHtml(wf.description||''))})"
+            class="text-xs bg-[#0f1f1a] border border-[#065f46] text-[#34d399] hover:bg-[#1a2e20] px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+            Run ▶
+          </button>
+        </div>
+        <div class="text-[11px] text-[#3a3a50] mt-2 pt-2 border-t border-[#2a2a3a]">Click to inspect nodes</div>
+      </div>`).join('')
+  } catch(e) {
+    grid.innerHTML = `<div class="text-xs text-red-400 py-8 text-center">Failed: ${e.message}</div>`
+  }
+}
+
+async function loadWfDetail(id, desc) {
+  selectedWorkflow = id
+  document.getElementById('wf-detail-title').textContent = id
+  document.getElementById('wf-detail-desc').textContent = desc
+  const panel = document.getElementById('wf-nodes-panel')
+  panel.innerHTML = '<div class="text-xs text-[#64748b] text-center py-6">Loading…</div>'
+  document.getElementById('wf-detail').classList.remove('hidden')
+  document.getElementById('wf-detail').scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+  try {
+    const data = await fetch(`/api/workflow/${id}`).then(r => r.json())
+    const nodeColors = { agent:'text-[#818cf8] border-[#3730a3] bg-[#1a1a30]', tool:'text-[#34d399] border-[#065f46] bg-[#0f1f1a]',
+      llm:'text-[#f59e0b] border-[#78350f] bg-[#1f1800]', classification:'text-[#e879f9] border-[#701a75] bg-[#1e0f23]',
+      rag:'text-[#38bdf8] border-[#075985] bg-[#0c1e2a]' }
+    const nodeIcons = { agent:'🤖', tool:'🔧', llm:'✨', classification:'🔀', rag:'🔍' }
+
+    panel.innerHTML = data.nodes.map((n, i) => {
+      const nt = (n.node_type||'').toLowerCase()
+      const col = nodeColors[nt] || 'text-[#94a3b8] border-[#2a2a3a] bg-[#1a1a24]'
+      const icon = nodeIcons[nt] || '⬡'
+      const d = n.details || {}
+      const toolTags = d.allowed_tools?.length
+        ? d.allowed_tools.map(t => `<span class="tag text-[11px] px-1.5 py-0.5 rounded font-mono text-[#34d399]">${t}</span>`).join('')
+        : ''
+      return `
+        <div class="${i>0?'mt-0 pt-0':''} relative pl-4 ${i>0?'before:absolute before:left-[11px] before:top-0 before:w-px before:h-4 before:bg-[#2a2a3a]':''}">
+          ${i>0?'<div class="absolute left-[11px] top-0 w-px h-4 bg-[#2a2a3a]"></div>':''}
+          <div class="border rounded-xl p-3.5 mb-1 ${col}">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-base">${icon}</span>
+              <span class="font-mono text-sm font-semibold text-white">${n.node_id}</span>
+              <span class="cat-badge border ${col} text-[10px]">${n.node_type}</span>
+              ${i===0?'<span class="cat-badge bg-[#052e16] text-[#4ade80] border-[#166534] text-[10px]">start</span>':''}
+            </div>
+            ${d.description?`<div class="text-xs text-[#64748b] mt-1.5">${escHtml(d.description)}</div>`:''}
+            ${toolTags?`<div class="flex gap-1.5 flex-wrap mt-2">${toolTags}</div>`:''}
+            ${n.transitions?.length?`<div class="flex gap-2 mt-2 flex-wrap text-xs">${n.transitions.map(t=>`<span class="text-[#64748b]">${t.when==='always'?'→':`[${escHtml(t.when)}] →`}</span><span class="tag px-2 py-0.5 rounded text-[#818cf8]">${t.to}</span>`).join('')}</div>`:``}
+          </div>
+        </div>`
+    }).join('')
+  } catch(e) {
+    panel.innerHTML = `<div class="text-xs text-red-400 text-center py-6">Failed: ${e.message}</div>`
+  }
+}
+
+function closeWfDetail() {
+  document.getElementById('wf-detail').classList.add('hidden')
+  selectedWorkflow = null
+}
+
+function selectWfAndRun(id, desc) {
+  selectedWorkflow = id
+  document.getElementById('wf-detail-title').textContent = id
+  openRunModal()
+}
+
+function openRunModal() {
+  document.getElementById('run-message').value = '{}'
+  document.getElementById('run-session').value = ''
+  document.getElementById('run-result').classList.add('hidden')
+  document.getElementById('run-modal').classList.remove('hidden')
+}
+
+function closeRunModal() {
+  document.getElementById('run-modal').classList.add('hidden')
+}
+
+async function runWorkflow() {
+  if (!selectedWorkflow) return
+  let payload = {}
+  try { payload = JSON.parse(document.getElementById('run-message').value || '{}') } catch { showToast('Invalid JSON payload', 'error'); return }
+
+  document.getElementById('run-spin').classList.remove('hidden')
+  document.getElementById('run-btn-text').textContent = 'Running…'
+  document.getElementById('run-result').classList.add('hidden')
+
+  try {
+    const r = await fetch('/api/workflow/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workflow_id: selectedWorkflow,
+        payload,
+        session_id: document.getElementById('run-session').value.trim() || undefined,
+      }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data))
+    document.getElementById('run-result-pre').textContent = JSON.stringify(data, null, 2)
+    document.getElementById('run-result').classList.remove('hidden')
+  } catch(e) {
+    document.getElementById('run-result-pre').textContent = 'Error: ' + e.message
+    document.getElementById('run-result').classList.remove('hidden')
+  } finally {
+    document.getElementById('run-spin').classList.add('hidden')
+    document.getElementById('run-btn-text').textContent = 'Run'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool Catalogue
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadToolCatalogue() {
+  const el = document.getElementById('tools-catalogue')
+  try {
+    if (!allTools.length) allTools = await fetch('/api/studio/tools').then(r => r.json())
+    document.getElementById('tools-catalogue').dataset.loaded = '1'
+
+    // Build category filter buttons
+    const cats = [...new Set(allTools.map(t => t.category))]
+    const filterEl = document.getElementById('cat-filters')
+    filterEl.innerHTML = `<button onclick="filterCat('all')" data-cat="all" class="cat-btn text-xs px-3 py-1.5 rounded-full border border-[#6366f1] bg-[#1e1e30] text-white transition-colors">All</button>`
+    for (const cat of cats) {
+      filterEl.innerHTML += `<button onclick="filterCat('${cat}')" data-cat="${cat}" class="cat-btn text-xs px-3 py-1.5 rounded-full border border-[#2a2a3a] bg-[#1a1a24] text-[#64748b] hover:text-white transition-colors">${cat}</button>`
+    }
+
+    renderCatalogue()
+  } catch(e) {
+    el.innerHTML = `<div class="text-xs text-red-400 py-8 text-center col-span-2">Failed: ${e.message}</div>`
+  }
+}
+
+function filterCat(cat) {
+  activeCat = cat
+  document.querySelectorAll('.cat-btn').forEach(b => {
+    const active = b.dataset.cat === cat
+    b.className = `cat-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${active
+      ? 'border-[#6366f1] bg-[#1e1e30] text-white'
+      : 'border-[#2a2a3a] bg-[#1a1a24] text-[#64748b] hover:text-white'}`
+  })
+  renderCatalogue()
+}
+
+function renderCatalogue() {
+  const visible = activeCat === 'all' ? allTools : allTools.filter(t => t.category === activeCat)
+  const el = document.getElementById('tools-catalogue')
+  if (!visible.length) { el.innerHTML = '<div class="text-xs text-[#64748b] py-8 text-center col-span-2">No tools in this category.</div>'; return }
+
+  el.innerHTML = visible.map(tool => {
+    const catCls = `cat-${tool.category}`
+    const authBadge = tool.requires_auth
+      ? '<span class="cat-badge bg-[#1f1800] text-[#f59e0b] border-[#78350f] ml-1">auth</span>' : ''
+
+    const params = tool.params || []
+    const paramRows = params.map(p => `
+      <div class="flex items-start gap-2 text-xs">
+        <span class="font-mono text-[#818cf8] flex-shrink-0">${p.name}</span>
+        <span class="tag px-1.5 py-0.5 rounded text-[#64748b] text-[10px] flex-shrink-0">${p.type}</span>
+        ${p.required ? '<span class="text-red-400 text-[10px] flex-shrink-0">req</span>' : ''}
+        <span class="text-[#4a4a60] min-w-0">${escHtml(p.description)}</span>
+      </div>`).join('')
+
+    const paramsId = 'tp-' + tool.name.replace(/[^a-z0-9]/g,'_')
+    return `
+      <div class="card rounded-2xl p-4 fade-in">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-mono text-sm text-white font-semibold">${tool.name}</span>
+              <span class="cat-badge ${catCls}">${tool.category}</span>
+              ${authBadge}
+            </div>
+            <p class="text-xs text-[#64748b] mt-1.5 leading-snug">${escHtml(tool.description)}</p>
+          </div>
+        </div>
+        ${params.length ? `
+          <button onclick="toggleEl('${paramsId}')" class="text-xs text-[#3a3a50] hover:text-[#64748b] mt-3 transition-colors">
+            Parameters (${params.length}) ▸
+          </button>
+          <div id="${paramsId}" class="hidden mt-2 space-y-1.5 bg-[#0d0d14] rounded-lg p-3 border border-[#2a2a3a]">
+            ${paramRows || '<span class="text-xs text-[#3a3a50]">No parameters</span>'}
+          </div>` : '<div class="text-xs text-[#3a3a50] mt-2">No parameters</div>'}
+      </div>`
+  }).join('')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toast
+// ─────────────────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const el = document.getElementById('toast')
+  el.textContent = msg
+  el.className = `fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl border fade-in ${
+    type === 'error'
+      ? 'bg-[#1f0f0f] border-[#7f1d1d] text-red-300'
+      : 'bg-[#052e16] border-[#166534] text-green-300'
+  }`
+  el.classList.remove('hidden')
+  setTimeout(() => el.classList.add('hidden'), 4000)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleEl(id) { document.getElementById(id)?.classList.toggle('hidden') }
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+// Close modals on backdrop click
+document.getElementById('run-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeRunModal() })
+document.getElementById('agent-run-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeAgentRunModal() })
+
+init()
+</script>
+</body>
+</html>

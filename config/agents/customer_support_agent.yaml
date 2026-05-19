@@ -1,0 +1,21 @@
+agent_id: customer_support_agent
+version: "1.0"
+description: >
+  Standard customer support agent. Handles queries, complaints, order issues,
+  and general support for any business. Business name, product, and tone can
+  be injected via the context field. Supports RAG search for knowledge base
+  lookups and HTTP calls for order/account status checks via remote tools.
+model_profile: large
+system_prompt_path: config/prompts/agents/customer_support_agent.txt
+response_mode: text
+allowed_tools:
+  - rag_search
+  - json_extract
+  - http_request
+memory_window: 10
+max_steps: 5
+max_tool_calls: 4
+max_runtime_seconds: 45
+default_context:
+  tone: friendly
+  language: English

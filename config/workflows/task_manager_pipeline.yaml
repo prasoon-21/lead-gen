@@ -1,0 +1,29 @@
+workflow_id: task_manager_pipeline
+version: "1.0"
+description: "Ensure todo store, then run task manager agent"
+start_at: ensure_todo_store
+nodes:
+  - node_id: ensure_todo_store
+    node_type: tool
+    config:
+      tool_name: todo_ensure_store
+      arguments: {}
+    input_map: {}
+    output_map:
+      outputs.todo_store: data.store
+    transitions:
+      - to: run_task_manager_agent
+        when: always
+
+  - node_id: run_task_manager_agent
+    node_type: agent
+    config:
+      agent_id: task_manager_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.agent_response: text
+      outputs.agent_steps: steps
+    transitions: []

@@ -1,0 +1,24 @@
+workflow_id: campus_learning_agent
+version: "1.0"
+description: >
+  Campus learning agent workflow for higher-education and coaching contexts.
+  Accepts rich student context (level, medium, courseType, board, topic) from
+  the route handler, then runs the campus kernel agent which handles RAG search,
+  document analysis, image generation, and full conversation memory per session.
+
+start_at: campus_agent
+
+nodes:
+  - node_id: campus_agent
+    node_type: agent
+    config:
+      agent_id: campus_kernel_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.text: text
+      outputs.steps: steps
+      outputs.metadata: metadata
+    transitions: []

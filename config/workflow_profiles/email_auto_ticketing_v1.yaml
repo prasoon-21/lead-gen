@@ -1,0 +1,113 @@
+profile_id: email_auto_ticketing_v1
+version: "1.0"
+workflow_id: email_auto_ticketing_v1
+description: "Conversation classification profile for RV heater, AC, accessories, and partner power station support."
+instructions:
+  - "Read the entire conversation, including the latest message and any previous replies if provided."
+  - "Choose the single best enum value for each enum dimension."
+  - "Only set needs_ticket to true when the conversation clearly requires a support, sales, warranty, or parts follow-up."
+  - "Use ticket_queue=no_ticket when the conversation should not create a ticket."
+  - "Use concise, operational wording for ticket_title and ticket_summary."
+dimensions:
+  - name: needs_ticket
+    field_type: boolean
+    description: "Whether this conversation should create or update a tracked ticket or case."
+    required: true
+  - name: request_type
+    field_type: enum
+    description: "Primary business intent of the conversation."
+    allowed_values:
+      - pre_sales
+      - post_sales_installation
+      - post_sales_technical_support
+      - warranty_or_failure
+      - order_status
+      - parts_accessories
+      - partner_power_station
+      - general_query
+    required: true
+  - name: product_family
+    field_type: enum
+    description: "Which product family the conversation is mainly about."
+    allowed_values:
+      - heater
+      - ac
+      - accessory
+      - power_station
+      - unknown
+    required: true
+  - name: customer_role
+    field_type: enum
+    description: "What kind of contact is writing in."
+    allowed_values:
+      - end_customer
+      - dealer
+      - partner
+      - prospect
+      - unknown
+    required: true
+  - name: customer_stage
+    field_type: enum
+    description: "Where the customer is in the product lifecycle."
+    allowed_values:
+      - pre_purchase
+      - installation
+      - newly_installed
+      - installed_and_used
+      - warranty_or_failure
+      - unknown
+    required: true
+  - name: issue_area
+    field_type: enum
+    description: "Main issue or intent subtype."
+    allowed_values:
+      - product_selection
+      - fitment_question
+      - installation_help
+      - technical_troubleshooting
+      - error_code
+      - replacement_part
+      - order_help
+      - status_check
+      - warranty_claim
+      - general_information
+      - other
+    required: true
+  - name: error_code
+    field_type: string
+    description: "Specific product error code if explicitly mentioned."
+    required: false
+    allow_null: true
+  - name: priority
+    field_type: enum
+    description: "Operational priority for the ticket if one is needed."
+    allowed_values:
+      - low
+      - medium
+      - high
+    required: true
+  - name: ticket_queue
+    field_type: enum
+    description: "Suggested destination queue for downstream processing."
+    allowed_values:
+      - sales
+      - support_installation
+      - support_technical
+      - warranty
+      - parts
+      - partner
+      - general_inbox
+      - no_ticket
+    required: true
+  - name: ticket_title
+    field_type: string
+    description: "Short operational title for the ticket or case."
+    required: true
+  - name: ticket_summary
+    field_type: string
+    description: "Brief summary of the customer need in 1 to 2 sentences."
+    required: true
+  - name: confidence
+    field_type: number
+    description: "Confidence score from 0 to 1."
+    required: true

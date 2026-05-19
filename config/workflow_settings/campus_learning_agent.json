@@ -1,0 +1,53 @@
+{
+  "workflow": "campus_learning_agent",
+  "version": "1.0",
+  "description": "Campus OS learning agent workflow",
+  "vector_store": {
+    "provider": "qdrant",
+    "collection": "aurika_campus_content",
+    "filters": {
+      "must": [
+        { "field": "level", "op": "eq", "value": "{{level}}" },
+        { "field": "medium", "op": "eq", "value": "{{medium}}" },
+        { "field": "course_type", "op": "eq", "value": "{{course_type}}" },
+        { "field": "subject", "op": "eq", "value": "{{subject}}" }
+      ],
+      "should": [
+        { "field": "topic_name", "op": "eq", "value": "{{topic}}" },
+        { "field": "subtopic_name", "op": "eq", "value": "{{subtopic}}" }
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "nodes": [
+    {
+      "name": "subject_detector",
+      "type": "text_analyzer",
+      "model": "gemini-2.5-flash",
+      "model_profile": "small",
+      "system_prompt": "Detect subject from query. Output ONE word: Mathematics/Science/Physics/Chemistry/Biology/Social Science/English/Hindi",
+      "output_format": "text",
+      "temperature": 0.3,
+      "max_tokens": 50
+    },
+    {
+      "name": "document_analyzer",
+      "type": "file_analyzer",
+      "model": "gemini-2.5-flash",
+      "model_profile": "small",
+      "system_prompt": "Analyze document and extract relevant content. Use proper math symbols.",
+      "temperature": 0.7
+    },
+    {
+      "name": "learning_agent",
+      "type": "agent",
+      "model": "gemini-2.5-flash",
+      "model_profile": "large",
+      "system_prompt_path": "config/prompts/campus/learning_agent.txt",
+      "embedding_collection": "aurika_campus_content",
+      "tools": ["qdrant_retriever"],
+      "temperature": 0.7,
+      "max_tokens": 4096
+    }
+  ]
+}

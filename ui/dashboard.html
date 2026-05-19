@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic Core — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { theme: { extend: { colors: { brand: { DEFAULT:'#6366f1', dark:'#4f46e5', light:'#818cf8' } } } } }</script>
+  <style>
+    body { background:#0f0f13; color:#e2e8f0; font-family:'Inter',system-ui,sans-serif; }
+    .card  { background:#1a1a24; border:1px solid #2a2a3a; }
+    .input { background:#12121a; border:1px solid #2a2a3a; color:#e2e8f0; }
+    .input:focus { outline:none; border-color:#6366f1; }
+    .tab-active   { border-bottom:2px solid #6366f1; color:#818cf8; }
+    .tab-inactive { border-bottom:2px solid transparent; color:#64748b; }
+    .itab-on  { background:#1e1e30; color:#c4c4f0; }
+    .itab-off { background:transparent; color:#64748b; }
+    .tag  { background:#1e1e30; border:1px solid #2e2e45; }
+    pre   { white-space:pre-wrap; word-break:break-word; }
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:#12121a; }
+    ::-webkit-scrollbar-thumb { background:#2a2a3a; border-radius:3px; }
+    .spinner { animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .fade-in { animation:fadeIn .18s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    /* node colours */
+    .nt-agent          { color:#818cf8; border-color:#3730a3; background:#1a1a30; }
+    .nt-tool           { color:#34d399; border-color:#065f46; background:#0f1f1a; }
+    .nt-llm            { color:#f59e0b; border-color:#78350f; background:#1f1800; }
+    .nt-classification { color:#e879f9; border-color:#701a75; background:#1e0f23; }
+    .nt-rag            { color:#38bdf8; border-color:#075985; background:#0c1e2a; }
+    .node-connector { position:relative; }
+    .node-connector::before { content:''; position:absolute; left:50%; top:-18px; width:2px; height:18px; background:#2a2a3a; }
+    .node-connector:first-child::before { display:none; }
+    /* chat */
+    .bubble-user   { background:#1e1e3e; border:1px solid #3730a3; border-radius:14px 14px 4px 14px; }
+    .bubble-agent  { background:#1a1a24; border:1px solid #2a2a3a; border-radius:14px 14px 14px 4px; }
+    .bubble-error  { background:#1f0f0f; border:1px solid #7f1d1d; border-radius:14px; }
+    .record-pulse  { animation:recpulse 1s ease-in-out infinite; }
+    @keyframes recpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .mode-on  { background:#1e1e30; color:#818cf8; border:1px solid #3730a3; }
+    .mode-off { background:transparent; color:#64748b; border:1px solid transparent; }
+    textarea { resize:none; }
+    #wf-chat-input, #ag-chat-input { max-height:120px; overflow-y:auto; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ── Header ── -->
+<header class="border-b border-[#2a2a3a] px-6 py-3.5 flex items-center gap-3 flex-shrink-0">
+  <div class="w-7 h-7 rounded-lg bg-brand flex items-center justify-center text-white text-sm font-bold">A</div>
+  <span class="font-semibold text-white tracking-tight">Agentic Core</span>
+  <span class="text-[#3a3a50] text-sm ml-1">/ Dashboard</span>
+  <div class="ml-auto flex items-center gap-3">
+    <a href="/studio" class="text-xs text-[#64748b] hover:text-[#818cf8] transition-colors px-2 py-1 rounded-md hover:bg-[#1e1e30]">Studio ✦</a>
+    <div id="status-dot" class="w-2 h-2 rounded-full bg-yellow-500"></div>
+    <span id="status-text" class="text-xs text-[#64748b]">Connecting…</span>
+  </div>
+</header>
+
+<div class="flex" style="height:calc(100vh - 53px)">
+
+  <!-- ── Left sidebar ── -->
+  <aside class="w-60 border-r border-[#2a2a3a] flex flex-col overflow-hidden flex-shrink-0">
+    <div class="flex border-b border-[#2a2a3a] px-4 pt-3">
+      <button onclick="switchTab('workflow')" id="tab-workflow" class="tab-active pb-2 mr-6 text-sm font-medium">Workflows</button>
+      <button onclick="switchTab('agent')"   id="tab-agent"    class="tab-inactive pb-2 text-sm font-medium">Agents</button>
+    </div>
+    <div id="panel-workflow" class="flex-1 overflow-y-auto p-2.5 space-y-0.5">
+      <div class="text-xs text-[#64748b] px-2 py-6 text-center">Loading…</div>
+    </div>
+    <div id="panel-agent" class="flex-1 overflow-y-auto p-2.5 space-y-0.5 hidden">
+      <div class="text-xs text-[#64748b] px-2 py-6 text-center">Loading…</div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+    <!-- ══════════ WORKFLOW MAIN ══════════ -->
+    <div id="main-workflow" class="flex-1 flex flex-col overflow-hidden">
+      <div id="wf-empty" class="flex-1 flex items-center justify-center text-[#3a3a50] text-sm">← Select a workflow</div>
+      <div id="wf-loaded" class="flex-1 flex flex-col overflow-hidden hidden">
+
+        <!-- info + inner tabs -->
+        <div class="border-b border-[#2a2a3a] px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
+          <div class="min-w-0 flex-1">
+            <h2 id="wf-title" class="text-white font-semibold text-sm truncate"></h2>
+            <p  id="wf-desc"  class="text-[#64748b] text-xs mt-0.5 truncate"></p>
+          </div>
+          <div class="flex gap-1">
+            <button onclick="switchInnerTab('nodes')" id="itab-nodes" class="itab-on  text-xs px-3 py-1.5 rounded-md font-medium transition-colors">Nodes</button>
+            <button onclick="switchInnerTab('run')"   id="itab-run"   class="itab-off text-xs px-3 py-1.5 rounded-md font-medium transition-colors">Run</button>
+          </div>
+        </div>
+
+        <!-- NODES tab -->
+        <div id="inner-nodes" class="flex-1 overflow-y-auto p-5">
+          <div id="nodes-loading" class="text-xs text-[#64748b] py-8 text-center">Loading nodes…</div>
+          <div id="nodes-list"    class="hidden space-y-0"></div>
+        </div>
+
+        <!-- RUN tab -->
+        <div id="inner-run" class="flex-1 flex flex-col overflow-hidden hidden">
+
+          <!-- mode bar -->
+          <div class="border-b border-[#2a2a3a] px-4 py-2 flex items-center gap-2 flex-shrink-0">
+            <button onclick="setMode('wf','chat')" id="wf-mode-chat" class="mode-on  text-xs px-2.5 py-1 rounded-md font-medium transition-all">💬 Chat</button>
+            <button onclick="setMode('wf','json')" id="wf-mode-json" class="mode-off text-xs px-2.5 py-1 rounded-md font-medium transition-all">{ } JSON</button>
+            <div class="ml-auto flex items-center gap-3">
+              <span id="wf-session-label" class="text-xs text-[#3a3a50] font-mono truncate max-w-[160px]"></span>
+              <button onclick="clearChat('wf')" class="text-xs text-[#3a3a50] hover:text-red-400 transition-colors">Clear</button>
+            </div>
+          </div>
+
+          <!-- CHAT MODE -->
+          <div id="wf-chat-pane" class="flex-1 flex flex-col overflow-hidden">
+            <div id="wf-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3"></div>
+
+            <!-- attachment preview -->
+            <div id="wf-attach-preview" class="hidden px-4 pb-1">
+              <div class="flex items-center gap-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg px-3 py-2 text-xs">
+                <span id="wf-attach-icon" class="text-base"></span>
+                <span id="wf-attach-name" class="text-[#818cf8] flex-1 truncate"></span>
+                <button onclick="clearAttachment('wf')" class="text-[#64748b] hover:text-red-400 ml-1">✕</button>
+              </div>
+            </div>
+
+            <!-- recording indicator -->
+            <div id="wf-rec-bar" class="hidden px-4 pb-1 flex items-center gap-2 text-xs text-red-400">
+              <div class="w-2 h-2 rounded-full bg-red-500 record-pulse"></div>
+              <span>Recording…</span>
+              <span id="wf-rec-time" class="font-mono">0:00</span>
+              <span class="text-[#64748b] ml-1">click mic to send</span>
+            </div>
+
+            <!-- input bar -->
+            <div class="border-t border-[#2a2a3a] p-3 flex-shrink-0">
+              <div class="flex items-end gap-2">
+                <!-- file -->
+                <input type="file" id="wf-file-input" class="hidden" accept="image/*,.pdf,.txt,.csv,.json,.md" onchange="onFileSelected('wf',this)"/>
+                <button onclick="document.getElementById('wf-file-input').click()"
+                  class="w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[#64748b] hover:text-[#818cf8] hover:bg-[#1e1e30] transition-colors text-base" title="Attach file">
+                  📎
+                </button>
+                <!-- mic -->
+                <button id="wf-mic-btn" onclick="toggleRecording('wf')"
+                  class="w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[#64748b] hover:text-[#818cf8] hover:bg-[#1e1e30] transition-colors text-base" title="Record voice">
+                  🎤
+                </button>
+                <!-- text -->
+                <textarea id="wf-chat-input" rows="1"
+                  class="input flex-1 rounded-xl px-3 py-2 text-sm leading-relaxed"
+                  placeholder="Type a message, or use 📎 / 🎤 …"
+                  onkeydown="onChatKey(event,'wf')"
+                  oninput="autoResize(this)"></textarea>
+                <!-- send -->
+                <button onclick="sendChat('wf')"
+                  class="w-8 h-8 flex-shrink-0 rounded-lg bg-brand hover:bg-brand-dark flex items-center justify-center text-white transition-colors text-sm">
+                  <svg id="wf-send-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <span id="wf-send-icon">↑</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- JSON MODE -->
+          <div id="wf-json-pane" class="hidden flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
+            <div>
+              <label class="text-xs text-[#64748b] uppercase tracking-wider mb-1.5 block">Payload (JSON)</label>
+              <textarea id="wf-payload" rows="8" class="input w-full rounded-lg p-3 text-sm font-mono" placeholder='{"message": "Hello"}'>{}</textarea>
+            </div>
+            <div>
+              <label class="text-xs text-[#64748b] uppercase tracking-wider mb-1.5 block">Session ID <span class="normal-case text-[#3a3a50]">(optional)</span></label>
+              <input id="wf-json-session" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="Auto-generated" />
+            </div>
+            <button onclick="runJson('wf')" class="w-full bg-brand hover:bg-brand-dark text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+              <svg id="wf-json-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+              <span id="wf-json-btn">Run Workflow</span>
+            </button>
+            <div id="wf-json-result" class="space-y-3"></div>
+          </div>
+
+        </div><!-- /inner-run -->
+      </div><!-- /wf-loaded -->
+    </div><!-- /main-workflow -->
+
+    <!-- ══════════ AGENT MAIN ══════════ -->
+    <div id="main-agent" class="flex-1 flex flex-col overflow-hidden hidden">
+      <div id="ag-empty" class="flex-1 flex items-center justify-center text-[#3a3a50] text-sm">← Select an agent</div>
+      <div id="ag-loaded" class="flex-1 flex flex-col overflow-hidden hidden">
+
+        <!-- info bar -->
+        <div class="border-b border-[#2a2a3a] px-5 py-2.5 flex items-center gap-3 flex-shrink-0">
+          <div class="min-w-0 flex-1">
+            <h2 id="ag-title" class="text-white font-semibold text-sm truncate"></h2>
+            <p  id="ag-desc"  class="text-[#64748b] text-xs mt-0.5 truncate"></p>
+          </div>
+          <div id="ag-tools" class="flex gap-1.5 flex-wrap justify-end max-w-xs"></div>
+        </div>
+
+        <!-- mode bar -->
+        <div class="border-b border-[#2a2a3a] px-4 py-2 flex items-center gap-2 flex-shrink-0">
+          <button onclick="setMode('ag','chat')" id="ag-mode-chat" class="mode-on  text-xs px-2.5 py-1 rounded-md font-medium transition-all">💬 Chat</button>
+          <button onclick="setMode('ag','json')" id="ag-mode-json" class="mode-off text-xs px-2.5 py-1 rounded-md font-medium transition-all">{ } JSON</button>
+          <div class="ml-auto flex items-center gap-3">
+            <span id="ag-session-label" class="text-xs text-[#3a3a50] font-mono truncate max-w-[160px]"></span>
+            <button onclick="clearChat('ag')" class="text-xs text-[#3a3a50] hover:text-red-400 transition-colors">Clear</button>
+          </div>
+        </div>
+
+        <!-- CHAT MODE -->
+        <div id="ag-chat-pane" class="flex-1 flex flex-col overflow-hidden">
+          <div id="ag-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-3"></div>
+
+          <div id="ag-attach-preview" class="hidden px-4 pb-1">
+            <div class="flex items-center gap-2 bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg px-3 py-2 text-xs">
+              <span id="ag-attach-icon" class="text-base"></span>
+              <span id="ag-attach-name" class="text-[#818cf8] flex-1 truncate"></span>
+              <button onclick="clearAttachment('ag')" class="text-[#64748b] hover:text-red-400">✕</button>
+            </div>
+          </div>
+
+          <div id="ag-rec-bar" class="hidden px-4 pb-1 flex items-center gap-2 text-xs text-red-400">
+            <div class="w-2 h-2 rounded-full bg-red-500 record-pulse"></div>
+            <span>Recording…</span>
+            <span id="ag-rec-time" class="font-mono">0:00</span>
+            <span class="text-[#64748b] ml-1">click mic to send</span>
+          </div>
+
+          <div class="border-t border-[#2a2a3a] p-3 flex-shrink-0">
+            <div class="flex items-end gap-2">
+              <input type="file" id="ag-file-input" class="hidden" accept="image/*,.pdf,.txt,.csv,.json,.md" onchange="onFileSelected('ag',this)"/>
+              <button onclick="document.getElementById('ag-file-input').click()"
+                class="w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[#64748b] hover:text-[#818cf8] hover:bg-[#1e1e30] transition-colors text-base" title="Attach file">📎</button>
+              <button id="ag-mic-btn" onclick="toggleRecording('ag')"
+                class="w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[#64748b] hover:text-[#818cf8] hover:bg-[#1e1e30] transition-colors text-base" title="Record voice">🎤</button>
+              <textarea id="ag-chat-input" rows="1"
+                class="input flex-1 rounded-xl px-3 py-2 text-sm leading-relaxed"
+                placeholder="Type a message, or use 📎 / 🎤 …"
+                onkeydown="onChatKey(event,'ag')"
+                oninput="autoResize(this)"></textarea>
+              <button onclick="sendChat('ag')"
+                class="w-8 h-8 flex-shrink-0 rounded-lg bg-brand hover:bg-brand-dark flex items-center justify-center text-white transition-colors text-sm">
+                <svg id="ag-send-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+                <span id="ag-send-icon">↑</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- JSON MODE -->
+        <div id="ag-json-pane" class="hidden flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
+          <div>
+            <label class="text-xs text-[#64748b] uppercase tracking-wider mb-1.5 block">Message</label>
+            <textarea id="ag-json-message" rows="4" class="input w-full rounded-lg p-3 text-sm" placeholder="What do you want to ask?"></textarea>
+          </div>
+          <div>
+            <label class="text-xs text-[#64748b] uppercase tracking-wider mb-1.5 block">Context (JSON)</label>
+            <textarea id="ag-json-context" rows="4" class="input w-full rounded-lg p-3 text-sm font-mono" spellcheck="false">{}</textarea>
+          </div>
+          <div>
+            <label class="text-xs text-[#64748b] uppercase tracking-wider mb-1.5 block">Session ID <span class="normal-case text-[#3a3a50]">(optional)</span></label>
+            <input id="ag-json-session" type="text" class="input w-full rounded-lg px-3 py-2 text-sm" placeholder="Auto-generated" />
+          </div>
+          <button onclick="runJson('ag')" class="w-full bg-brand hover:bg-brand-dark text-white rounded-lg py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
+            <svg id="ag-json-spin" class="spinner hidden w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/><path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z"/></svg>
+            <span id="ag-json-btn">Run Agent</span>
+          </button>
+          <div id="ag-json-result" class="space-y-3"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────
+let activeTab        = 'workflow'
+let activeInnerTab   = 'nodes'
+let selectedWorkflow = null
+let selectedAgent    = null
+
+// per-item session IDs and modes
+const sessions = {}  // { 'wf:task_manager_pipeline': 'SESS_xxx', 'ag:research_assistant': 'SESS_yyy' }
+const modes    = { wf: 'chat', ag: 'chat' }
+
+// attachment state
+const attachment = { wf: null, ag: null }  // { name, type, data (base64), mimeType }
+
+// voice recording state
+const rec = {
+  wf: { recorder: null, chunks: [], timer: null, secs: 0, active: false },
+  ag: { recorder: null, chunks: [], timer: null, secs: 0, active: false },
+}
+
+const NODE_COLORS = { agent:'nt-agent', tool:'nt-tool', llm:'nt-llm', classification:'nt-classification', rag:'nt-rag' }
+const NODE_ICONS  = { agent:'🤖', tool:'🔧', llm:'✨', classification:'🔀', rag:'🔍' }
+
+// ─────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────
+async function init() {
+  checkHealth()
+  loadWorkflows()
+  loadAgents()
+}
+
+async function checkHealth() {
+  try {
+    const ok = (await fetch('/health')).ok
+    document.getElementById('status-dot').className  = `w-2 h-2 rounded-full ${ok?'bg-green-500':'bg-red-500'}`
+    document.getElementById('status-text').textContent = ok ? 'Online' : 'Offline'
+  } catch {
+    document.getElementById('status-dot').className  = 'w-2 h-2 rounded-full bg-red-500'
+    document.getElementById('status-text').textContent = 'Offline'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab
+  ;['workflow','agent'].forEach(t => {
+    document.getElementById(`tab-${t}`).className =
+      t===tab ? 'tab-active pb-2 mr-6 text-sm font-medium'
+              : 'tab-inactive pb-2 mr-6 text-sm font-medium'
+    document.getElementById(`panel-${t}`).classList.toggle('hidden', t!==tab)
+    document.getElementById(`main-${t}`).classList.toggle('hidden', t!==tab)
+  })
+}
+
+function switchInnerTab(tab) {
+  activeInnerTab = tab
+  ;['nodes','run'].forEach(t => {
+    document.getElementById(`itab-${t}`).className =
+      t===tab ? 'itab-on  text-xs px-3 py-1.5 rounded-md font-medium transition-colors'
+              : 'itab-off text-xs px-3 py-1.5 rounded-md font-medium transition-colors'
+    document.getElementById(`inner-${t}`).classList.toggle('hidden', t!==tab)
+  })
+}
+
+function setMode(p, mode) {
+  modes[p] = mode
+  document.getElementById(`${p}-mode-chat`).className = mode==='chat'
+    ? 'mode-on  text-xs px-2.5 py-1 rounded-md font-medium transition-all'
+    : 'mode-off text-xs px-2.5 py-1 rounded-md font-medium transition-all'
+  document.getElementById(`${p}-mode-json`).className = mode==='json'
+    ? 'mode-on  text-xs px-2.5 py-1 rounded-md font-medium transition-all'
+    : 'mode-off text-xs px-2.5 py-1 rounded-md font-medium transition-all'
+  document.getElementById(`${p}-chat-pane`).classList.toggle('hidden', mode!=='chat')
+  document.getElementById(`${p}-json-pane`).classList.toggle('hidden', mode!=='json')
+}
+
+// ─────────────────────────────────────────────────────────────
+// Workflows
+// ─────────────────────────────────────────────────────────────
+async function loadWorkflows() {
+  try {
+    const { workflows } = await fetch('/api/workflow/list').then(r=>r.json())
+    const c = document.getElementById('panel-workflow')
+    c.innerHTML = ''
+    if (!workflows.length) { c.innerHTML='<div class="text-xs text-[#64748b] px-2 py-6 text-center">No workflows</div>'; return }
+    workflows.forEach(wf => {
+      const b = document.createElement('button')
+      b.id = `wf-btn-${wf.workflow_id}`
+      b.className = 'w-full text-left rounded-lg px-3 py-2.5 hover:bg-[#1e1e2e] transition-colors group'
+      b.onclick = () => selectWorkflow(wf)
+      b.innerHTML = `<div class="text-sm text-[#c4c4d4] group-hover:text-white font-medium truncate">${wf.workflow_id}</div><div class="text-xs text-[#4a4a60] mt-0.5 truncate">${wf.description||'No description'}</div>`
+      c.appendChild(b)
+    })
+  } catch { document.getElementById('panel-workflow').innerHTML='<div class="text-xs text-red-400 px-2 py-6 text-center">Failed to load</div>' }
+}
+
+async function selectWorkflow(wf) {
+  selectedWorkflow = wf
+  document.querySelectorAll('[id^="wf-btn-"]').forEach(b=>b.classList.remove('bg-[#1e1e2e]','ring-1','ring-brand'))
+  document.getElementById(`wf-btn-${wf.workflow_id}`)?.classList.add('bg-[#1e1e2e]','ring-1','ring-brand')
+  document.getElementById('wf-title').textContent = wf.workflow_id
+  document.getElementById('wf-desc').textContent  = wf.description || ''
+  document.getElementById('wf-empty').classList.add('hidden')
+  document.getElementById('wf-loaded').classList.remove('hidden')
+  switchInnerTab('nodes')
+  updateSessionLabel('wf', wf.workflow_id)
+  loadWorkflowNodes(wf.workflow_id)
+}
+
+async function loadWorkflowNodes(id) {
+  const loading = document.getElementById('nodes-loading')
+  const list    = document.getElementById('nodes-list')
+  loading.classList.remove('hidden'); list.classList.add('hidden'); list.innerHTML=''
+  try {
+    const data = await fetch(`/api/workflow/${id}`).then(r=>r.json())
+    loading.classList.add('hidden'); list.classList.remove('hidden')
+    list.innerHTML = data.nodes.map((n,i)=>renderNodeCard(n,i,data.nodes.length)).join('')
+  } catch(e) { loading.textContent='Failed: '+e.message }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Agents
+// ─────────────────────────────────────────────────────────────
+async function loadAgents() {
+  try {
+    const { agents } = await fetch('/api/agent/list').then(r=>r.json())
+    const c = document.getElementById('panel-agent')
+    c.innerHTML = ''
+    if (!agents.length) { c.innerHTML='<div class="text-xs text-[#64748b] px-2 py-6 text-center">No agents</div>'; return }
+    agents.forEach(ag => {
+      const b = document.createElement('button')
+      b.id = `ag-btn-${ag.agent_id}`
+      b.className = 'w-full text-left rounded-lg px-3 py-2.5 hover:bg-[#1e1e2e] transition-colors group'
+      b.onclick = () => selectAgent(ag)
+      b.innerHTML = `<div class="text-sm text-[#c4c4d4] group-hover:text-white font-medium truncate">${ag.agent_id}</div><div class="text-xs text-[#4a4a60] mt-0.5 truncate">${ag.description||'No description'}</div>`
+      c.appendChild(b)
+    })
+  } catch { document.getElementById('panel-agent').innerHTML='<div class="text-xs text-red-400 px-2 py-6 text-center">Failed to load</div>' }
+}
+
+function selectAgent(ag) {
+  selectedAgent = ag
+  document.querySelectorAll('[id^="ag-btn-"]').forEach(b=>b.classList.remove('bg-[#1e1e2e]','ring-1','ring-brand'))
+  document.getElementById(`ag-btn-${ag.agent_id}`)?.classList.add('bg-[#1e1e2e]','ring-1','ring-brand')
+  document.getElementById('ag-title').textContent = ag.agent_id
+  document.getElementById('ag-desc').textContent  = ag.description||''
+  document.getElementById('ag-tools').innerHTML   = (ag.allowed_tools||[]).map(t=>`<span class="tag text-xs px-2 py-0.5 rounded text-[#34d399]">${t}</span>`).join('')
+  document.getElementById('ag-empty').classList.add('hidden')
+  document.getElementById('ag-loaded').classList.remove('hidden')
+  updateSessionLabel('ag', ag.agent_id)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Session management
+// ─────────────────────────────────────────────────────────────
+function sessionKey(p) {
+  return p==='wf'
+    ? (selectedWorkflow ? `wf:${selectedWorkflow.workflow_id}` : null)
+    : (selectedAgent    ? `ag:${selectedAgent.agent_id}`       : null)
+}
+
+function getOrCreateSession(p) {
+  const k = sessionKey(p)
+  if (!k) return null
+  if (!sessions[k]) sessions[k] = 'SESS_' + Math.random().toString(36).slice(2).toUpperCase()
+  return sessions[k]
+}
+
+function updateSessionLabel(p, id) {
+  const k   = `${p}:${id}`
+  const sid = sessions[k] || ''
+  document.getElementById(`${p}-session-label`).textContent = sid ? sid.slice(0,20)+'…' : ''
+}
+
+function clearChat(p) {
+  const k = sessionKey(p)
+  if (k) delete sessions[k]
+  document.getElementById(`${p}-messages`).innerHTML = ''
+  updateSessionLabel(p, p==='wf' ? selectedWorkflow?.workflow_id : selectedAgent?.agent_id)
+  clearAttachment(p)
+}
+
+// ─────────────────────────────────────────────────────────────
+// File attachment
+// ─────────────────────────────────────────────────────────────
+function onFileSelected(p, input) {
+  const file = input.files[0]
+  if (!file) return
+  const icon = file.type.startsWith('image/') ? '🖼️' : file.type==='application/pdf' ? '📄' : '📎'
+  const reader = new FileReader()
+  reader.onload = () => {
+    const b64 = reader.result.split(',')[1]
+    attachment[p] = { name: file.name, mimeType: file.type, data: b64, isImage: file.type.startsWith('image/') }
+    document.getElementById(`${p}-attach-icon`).textContent = icon
+    document.getElementById(`${p}-attach-name`).textContent = file.name
+    document.getElementById(`${p}-attach-preview`).classList.remove('hidden')
+  }
+  reader.readAsDataURL(file)
+  input.value = ''
+}
+
+function clearAttachment(p) {
+  attachment[p] = null
+  document.getElementById(`${p}-attach-preview`).classList.add('hidden')
+}
+
+// ─────────────────────────────────────────────────────────────
+// Voice recording
+// ─────────────────────────────────────────────────────────────
+async function toggleRecording(p) {
+  const r = rec[p]
+  if (!r.active) {
+    // START
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      r.recorder  = new MediaRecorder(stream)
+      r.chunks    = []
+      r.active    = true
+      r.secs      = 0
+      r.recorder.ondataavailable = e => r.chunks.push(e.data)
+      r.recorder.start()
+
+      document.getElementById(`${p}-mic-btn`).className =
+        'w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center bg-red-500 text-white transition-colors text-base record-pulse'
+      document.getElementById(`${p}-rec-bar`).classList.remove('hidden')
+
+      r.timer = setInterval(() => {
+        r.secs++
+        const m = Math.floor(r.secs/60), s = r.secs%60
+        document.getElementById(`${p}-rec-time`).textContent = `${m}:${s.toString().padStart(2,'0')}`
+      }, 1000)
+    } catch(e) {
+      appendBubble(p, 'error', 'Mic access denied: '+e.message)
+    }
+  } else {
+    // STOP → convert → attach as audio
+    r.active = false
+    clearInterval(r.timer)
+    document.getElementById(`${p}-rec-bar`).classList.add('hidden')
+    document.getElementById(`${p}-mic-btn`).className =
+      'w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-[#64748b] hover:text-[#818cf8] hover:bg-[#1e1e30] transition-colors text-base'
+
+    r.recorder.stop()
+    r.recorder.onstop = () => {
+      const blob   = new Blob(r.chunks, { type:'audio/webm' })
+      const reader = new FileReader()
+      reader.onload = () => {
+        const b64 = reader.result.split(',')[1]
+        attachment[p] = { name:'voice_message.webm', mimeType:'audio/webm', data:b64, isAudio:true }
+        document.getElementById(`${p}-attach-icon`).textContent = '🎤'
+        document.getElementById(`${p}-attach-name`).textContent = `Voice (${r.secs}s)`
+        document.getElementById(`${p}-attach-preview`).classList.remove('hidden')
+      }
+      reader.readAsDataURL(blob)
+      r.recorder.stream.getTracks().forEach(t=>t.stop())
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Send chat message
+// ─────────────────────────────────────────────────────────────
+function onChatKey(e, p) {
+  if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendChat(p) }
+}
+
+async function sendChat(p) {
+  const inputEl  = document.getElementById(`${p}-chat-input`)
+  const text     = inputEl.value.trim()
+  const file     = attachment[p]
+
+  if (!text && !file) return
+  if (p==='wf' && !selectedWorkflow) return
+  if (p==='ag' && !selectedAgent)    return
+
+  // show user bubble
+  const displayText = file
+    ? (text ? `${text}\n[${file.isAudio?'🎤':'📎'} ${file.name}]` : `[${file.isAudio?'🎤':'📎'} ${file.name}]`)
+    : text
+  appendBubble(p, 'user', displayText)
+
+  // clear input
+  inputEl.value = ''
+  autoResize(inputEl)
+  clearAttachment(p)
+
+  // show typing indicator
+  const typingId = appendTyping(p)
+
+  // get/create session
+  const session_id = getOrCreateSession(p)
+  updateSessionLabel(p, p==='wf' ? selectedWorkflow.workflow_id : selectedAgent.agent_id)
+
+  // build context with attachment
+  const ctx = {}
+  if (file) {
+    if (file.isAudio) ctx.audio_base64 = file.data
+    else ctx.attachment = { name: file.name, mime_type: file.mimeType, data: file.data }
+  }
+
+  setSendLoading(p, true)
+  try {
+    let data
+    if (p==='wf') {
+      const payload = { message: text || '', context: ctx }
+      if (file?.isAudio) payload.audio_base64 = file.data
+      const r = await fetch('/api/workflow/run', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ workflow_id: selectedWorkflow.workflow_id, payload, session_id }),
+      })
+      data = await r.json()
+      if (!r.ok) throw new Error(data.detail||JSON.stringify(data))
+      removeTyping(typingId)
+      appendWorkflowBubble(p, data)
+    } else {
+      const r = await fetch('/api/agent/run', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ agent_id: selectedAgent.agent_id, message: text||'(see attachment)', context: ctx, session_id }),
+      })
+      data = await r.json()
+      if (!r.ok) throw new Error(data.detail||JSON.stringify(data))
+      removeTyping(typingId)
+      appendAgentBubble(p, data)
+    }
+  } catch(e) {
+    removeTyping(typingId)
+    appendBubble(p, 'error', e.message)
+  } finally {
+    setSendLoading(p, false)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// JSON mode run
+// ─────────────────────────────────────────────────────────────
+async function runJson(p) {
+  const resultEl = document.getElementById(`${p}-json-result`)
+  resultEl.innerHTML = ''
+  const spinId = `${p}-json-spin`, btnId = `${p}-json-btn`
+  document.getElementById(spinId).classList.remove('hidden')
+  document.getElementById(btnId).textContent = 'Running…'
+
+  try {
+    if (p==='wf') {
+      let payload = {}
+      try { payload = JSON.parse(document.getElementById('wf-payload').value||'{}') } catch { throw new Error('Invalid JSON in payload') }
+      const r    = await fetch('/api/workflow/run', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ workflow_id: selectedWorkflow.workflow_id, payload, session_id: document.getElementById('wf-json-session').value.trim()||undefined }),
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.detail||JSON.stringify(data))
+      resultEl.innerHTML = renderJsonResult(data, 'workflow')
+    } else {
+      const msg = document.getElementById('ag-json-message').value.trim()
+      if (!msg) throw new Error('Message cannot be empty')
+      let ctx = {}
+      try { ctx = JSON.parse(document.getElementById('ag-json-context').value||'{}') } catch { throw new Error('Invalid JSON in context') }
+      const r    = await fetch('/api/agent/run', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ agent_id: selectedAgent.agent_id, message: msg, context: ctx, session_id: document.getElementById('ag-json-session').value.trim()||undefined }),
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.detail||JSON.stringify(data))
+      resultEl.innerHTML = renderJsonResult(data, 'agent')
+    }
+  } catch(e) {
+    resultEl.innerHTML = `<div class="card rounded-xl p-4 border-red-900"><div class="text-xs text-red-400 mb-1">Error</div><pre class="text-sm text-red-300">${escHtml(e.message)}</pre></div>`
+  } finally {
+    document.getElementById(spinId).classList.add('hidden')
+    document.getElementById(btnId).textContent = p==='wf' ? 'Run Workflow' : 'Run Agent'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Chat bubble helpers
+// ─────────────────────────────────────────────────────────────
+function appendBubble(p, role, text) {
+  const c  = document.getElementById(`${p}-messages`)
+  const d  = document.createElement('div')
+  d.className = `flex ${role==='user'?'justify-end':'justify-start'} fade-in`
+  const cls = role==='user' ? 'bubble-user' : role==='error' ? 'bubble-error' : 'bubble-agent'
+  const col = role==='user' ? 'text-[#c4c4f0]' : role==='error' ? 'text-red-300' : 'text-[#e2e8f0]'
+  d.innerHTML = `<div class="${cls} px-4 py-2.5 max-w-[80%]"><pre class="text-sm ${col} leading-relaxed">${escHtml(text)}</pre></div>`
+  c.appendChild(d)
+  c.scrollTop = c.scrollHeight
+  return d
+}
+
+function appendTyping(p) {
+  const c  = document.getElementById(`${p}-messages`)
+  const id = 'typing-'+Math.random().toString(36).slice(2)
+  const d  = document.createElement('div')
+  d.id = id
+  d.className = 'flex justify-start fade-in'
+  d.innerHTML = `<div class="bubble-agent px-4 py-3"><div class="flex gap-1 items-center">${[0,150,300].map(d=>`<div class="w-1.5 h-1.5 rounded-full bg-[#64748b]" style="animation:recpulse 1s ${d}ms ease-in-out infinite"></div>`).join('')}</div></div>`
+  c.appendChild(d)
+  c.scrollTop = c.scrollHeight
+  return id
+}
+
+function removeTyping(id) {
+  document.getElementById(id)?.remove()
+}
+
+function appendWorkflowBubble(p, data) {
+  const c   = document.getElementById(`${p}-messages`)
+  const d   = document.createElement('div')
+  d.className = 'flex justify-start fade-in'
+  const lat = data.metadata?.latency_ms?.toFixed(0) ?? '—'
+
+  // find best output to show
+  const outputs = data.state?.outputs || {}
+  let mainText  = ''
+  for (const key of ['agent_response','response','answer','text','summary','result']) {
+    if (outputs[key] && typeof outputs[key]==='string') { mainText=outputs[key]; break }
+  }
+  if (!mainText && Object.keys(outputs).length) {
+    mainText = JSON.stringify(outputs, null, 2)
+  }
+
+  const otherId  = 'wo-'+Math.random().toString(36).slice(2)
+  const stateId  = 'ws-'+Math.random().toString(36).slice(2)
+
+  d.innerHTML = `
+    <div class="bubble-agent px-4 py-3 max-w-[88%] space-y-2">
+      ${mainText ? `<pre class="text-sm text-[#e2e8f0] leading-relaxed">${escHtml(mainText)}</pre>` : ''}
+      ${Object.keys(outputs).filter(k=>!['agent_response','response','answer','text','summary'].includes(k)).length ? `
+        <button onclick="toggleEl('${otherId}')" class="text-xs text-[#64748b] hover:text-[#818cf8] transition-colors mt-1">Other outputs ▸</button>
+        <div id="${otherId}" class="hidden"><pre class="text-xs text-[#8a8aa0] bg-[#0d0d14] rounded-lg p-2.5 border border-[#2a2a3a] mt-1">${escHtml(JSON.stringify(outputs,null,2))}</pre></div>
+      ` : ''}
+      <div class="flex items-center gap-3 pt-1 border-t border-[#2a2a3a] mt-1">
+        <span class="text-xs text-[#3a3a50]">${lat}ms</span>
+        <span class="text-xs text-[#3a3a50]">·</span>
+        <span class="text-xs text-[#3a3a50]">${data.metadata?.steps??'—'} steps</span>
+        <button onclick="toggleEl('${stateId}')" class="text-xs text-[#3a3a50] hover:text-[#64748b] ml-auto">Full state ▸</button>
+      </div>
+      <div id="${stateId}" class="hidden"><pre class="text-xs text-[#8a8aa0] bg-[#0d0d14] rounded-lg p-2.5 border border-[#2a2a3a] max-h-64 overflow-y-auto">${escHtml(JSON.stringify(data.state,null,2))}</pre></div>
+    </div>`
+  c.appendChild(d)
+  c.scrollTop = c.scrollHeight
+}
+
+function appendAgentBubble(p, data) {
+  const c  = document.getElementById(`${p}-messages`)
+  const d  = document.createElement('div')
+  d.className = 'flex justify-start fade-in'
+  const lat     = data.metadata?.latency_ms?.toFixed(0) ?? '—'
+  const stepsId = 'as-'+Math.random().toString(36).slice(2)
+  const jsonId  = 'aj-'+Math.random().toString(36).slice(2)
+
+  d.innerHTML = `
+    <div class="bubble-agent px-4 py-3 max-w-[88%] space-y-2">
+      ${data.text ? `<pre class="text-sm text-[#e2e8f0] leading-relaxed">${escHtml(data.text)}</pre>` : ''}
+      ${data.json ? `
+        <button onclick="toggleEl('${jsonId}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">JSON output ▸</button>
+        <div id="${jsonId}" class="hidden"><pre class="text-xs text-[#c4c4d4] bg-[#0d0d14] rounded-lg p-2.5 border border-[#2a2a3a] mt-1">${escHtml(JSON.stringify(data.json,null,2))}</pre></div>
+      ` : ''}
+      <div class="flex items-center gap-3 pt-1 border-t border-[#2a2a3a] mt-1">
+        <span class="text-xs text-[#3a3a50]">${lat}ms</span>
+        <span class="text-xs text-[#3a3a50]">·</span>
+        <span class="text-xs text-[#3a3a50]">${data.metadata?.tool_calls??0} tool calls</span>
+        ${data.steps?.length ? `<button onclick="toggleEl('${stepsId}')" class="text-xs text-[#3a3a50] hover:text-[#64748b] ml-auto">Steps ▸</button>` : ''}
+      </div>
+      ${data.steps?.length ? `
+        <div id="${stepsId}" class="hidden space-y-1.5 pt-1">
+          ${data.steps.map((s,i)=>`
+            <div class="flex gap-2 text-xs">
+              <span class="w-4 h-4 rounded-full bg-[#1e1e30] flex items-center justify-center text-[#818cf8] flex-shrink-0">${i+1}</span>
+              <div>
+                <span class="${s.type==='tool_call'?'text-yellow-400':'text-green-400'} font-medium">${s.type||'step'}</span>
+                ${s.tool_name?`<span class="text-[#64748b] ml-1">${s.tool_name}</span>`:''}
+                ${s.response?`<div class="text-[#8a8aa0] mt-0.5 truncate max-w-xs">${escHtml(String(s.response).slice(0,100))}</div>`:''}
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+    </div>`
+  c.appendChild(d)
+  c.scrollTop = c.scrollHeight
+}
+
+// ─────────────────────────────────────────────────────────────
+// JSON mode result render
+// ─────────────────────────────────────────────────────────────
+function renderJsonResult(data, type) {
+  const lat = data.metadata?.latency_ms?.toFixed(0) ?? '—'
+  const metaRow = `<div class="card rounded-xl p-3 flex gap-5 text-sm">
+    <div><div class="text-xs text-[#64748b]">Trace</div><div class="text-white font-mono text-xs mt-0.5 truncate max-w-[140px]">${data.trace_id}</div></div>
+    <div><div class="text-xs text-[#64748b]">Latency</div><div class="text-green-400 text-sm font-medium mt-0.5">${lat}ms</div></div>
+    ${type==='workflow'
+      ? `<div><div class="text-xs text-[#64748b]">Steps</div><div class="text-brand-light text-sm font-medium mt-0.5">${data.metadata?.steps??'—'}</div></div>`
+      : `<div><div class="text-xs text-[#64748b]">Tool calls</div><div class="text-brand-light text-sm font-medium mt-0.5">${data.metadata?.tool_calls??0}</div></div>`
+    }
+  </div>`
+
+  let body = ''
+  if (type==='workflow') {
+    const outs = data.state?.outputs||{}
+    if (Object.keys(outs).length) {
+      body += `<div class="card rounded-xl p-4"><div class="text-xs text-[#64748b] uppercase tracking-wider mb-3">Outputs</div><div class="space-y-3">`
+      for (const [k,v] of Object.entries(outs)) {
+        body += `<div><div class="text-xs text-[#818cf8] mb-1">${k}</div><pre class="text-xs text-[#c4c4d4] bg-[#12121a] rounded-lg p-2.5 border border-[#2a2a3a]">${escHtml(typeof v==='string'?v:JSON.stringify(v,null,2))}</pre></div>`
+      }
+      body += `</div></div>`
+    }
+    body += collapsibleBlock('Full State', JSON.stringify(data.state,null,2))
+  } else {
+    if (data.text) body += `<div class="card rounded-xl p-4"><div class="text-xs text-[#64748b] uppercase tracking-wider mb-2">Response</div><pre class="text-sm text-[#e2e8f0] leading-relaxed">${escHtml(data.text)}</pre></div>`
+    if (data.json) body += collapsibleBlock('JSON Output', JSON.stringify(data.json,null,2))
+    if (data.steps?.length) {
+      const id = 'jst-'+Math.random().toString(36).slice(2)
+      body += `<div class="card rounded-xl p-4"><button onclick="toggleEl('${id}')" class="w-full flex items-center justify-between text-xs text-[#64748b] uppercase tracking-wider"><span>Steps (${data.steps.length})</span><span>▾</span></button><div id="${id}" class="mt-3 space-y-2">
+        ${data.steps.map((s,i)=>`<div class="flex gap-2 text-xs"><span class="w-4 h-4 rounded-full bg-[#1e1e30] flex items-center justify-center text-[#818cf8] flex-shrink-0">${i+1}</span><div><span class="${s.type==='tool_call'?'text-yellow-400':'text-green-400'}">${s.type||'step'}</span>${s.tool_name?`<span class="text-[#64748b] ml-1">${s.tool_name}</span>`:''}</div></div>`).join('')}
+      </div></div>`
+    }
+  }
+  return metaRow + body
+}
+
+function collapsibleBlock(label, content) {
+  const id = 'cb-'+Math.random().toString(36).slice(2)
+  return `<div class="card rounded-xl p-4"><button onclick="toggleEl('${id}')" class="w-full flex items-center justify-between text-xs text-[#64748b] uppercase tracking-wider"><span>${label}</span><span>▾</span></button><div id="${id}" class="hidden mt-3"><pre class="text-xs text-[#8a8aa0] bg-[#12121a] rounded-lg p-3 max-h-72 overflow-y-auto border border-[#2a2a3a]">${escHtml(content)}</pre></div></div>`
+}
+
+// ─────────────────────────────────────────────────────────────
+// Node inspector (unchanged)
+// ─────────────────────────────────────────────────────────────
+function renderNodeCard(node, index, total) {
+  const nt    = (node.node_type||'').toLowerCase()
+  const color = NODE_COLORS[nt]||'nt-tool'
+  const icon  = NODE_ICONS[nt]||'⬡'
+  const d     = node.details||{}
+
+  let det = ''
+  if (nt==='agent') {
+    det = `<div class="mt-3 space-y-2.5">
+      <div class="flex gap-2 flex-wrap text-xs">
+        ${d.model_profile?`<span class="tag px-2 py-0.5 rounded text-[#94a3b8]">model: ${d.model_profile}</span>`:''}
+        ${d.max_steps?`<span class="tag px-2 py-0.5 rounded text-[#94a3b8]">steps: ${d.max_steps}</span>`:''}
+        ${d.max_tool_calls?`<span class="tag px-2 py-0.5 rounded text-[#94a3b8]">tools: ${d.max_tool_calls}</span>`:''}
+        ${d.response_mode?`<span class="tag px-2 py-0.5 rounded text-[#94a3b8]">mode: ${d.response_mode}</span>`:''}
+      </div>
+      ${d.allowed_tools?.length?`<div><div class="text-xs text-[#64748b] mb-1">Tools</div><div class="flex gap-1.5 flex-wrap">${d.allowed_tools.map(t=>`<span class="tag text-xs px-2 py-0.5 rounded text-[#34d399]">${t}</span>`).join('')}</div></div>`:''}
+      ${d.system_prompt?`<div><button onclick="toggleEl('sp${index}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">System Prompt ▸</button><div id="sp${index}" class="hidden mt-1"><pre class="text-xs text-[#c4c4d4] bg-[#0d0d14] rounded-lg p-3 border border-[#2a2a3a] max-h-44 overflow-y-auto">${escHtml(d.system_prompt)}</pre></div></div>`:''}
+    </div>`
+  } else if (nt==='tool') {
+    det = `<div class="mt-3 space-y-2"><div class="flex items-center gap-2 text-xs"><span class="text-[#64748b]">Tool:</span><span class="tag px-2 py-0.5 rounded text-[#34d399] font-mono">${d.tool_name||'—'}</span></div>
+      ${d.arguments&&Object.keys(d.arguments).length?`<pre class="text-xs text-[#c4c4d4] bg-[#0d0d14] rounded-lg p-2.5 border border-[#2a2a3a]">${escHtml(JSON.stringify(d.arguments,null,2))}</pre>`:''}</div>`
+  } else if (nt==='llm') {
+    det = `<div class="mt-3 space-y-2"><div class="flex gap-2 text-xs"><span class="tag px-2 py-0.5 rounded text-[#94a3b8]">temp: ${d.temperature??0.7}</span><span class="tag px-2 py-0.5 rounded text-[#94a3b8]">tokens: ${d.max_tokens??1024}</span></div>
+      ${d.system_prompt?`<div><button onclick="toggleEl('sp${index}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">System Prompt ▸</button><div id="sp${index}" class="hidden mt-1"><pre class="text-xs text-[#c4c4d4] bg-[#0d0d14] rounded-lg p-3 border border-[#2a2a3a] max-h-44 overflow-y-auto">${escHtml(d.system_prompt)}</pre></div></div>`:''}</div>`
+  } else if (nt==='classification') {
+    const dims = d.dimensions||[]
+    det = `<div class="mt-3 space-y-2">
+      ${d.instructions?.length?`<div><button onclick="toggleEl('inst${index}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">Instructions (${d.instructions.length}) ▸</button><div id="inst${index}" class="hidden mt-1 space-y-1">${d.instructions.map(i=>`<div class="text-xs text-[#94a3b8] bg-[#0d0d14] rounded px-3 py-1.5 border border-[#2a2a3a]">• ${escHtml(i)}</div>`).join('')}</div></div>`:''}
+      ${dims.length?`<div><button onclick="toggleEl('dims${index}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">Output Fields (${dims.length}) ▸</button><div id="dims${index}" class="hidden mt-1 space-y-1.5">${dims.map(dm=>`<div class="bg-[#0d0d14] rounded-lg px-3 py-2 border border-[#2a2a3a]"><div class="flex items-center gap-2"><span class="text-xs font-mono text-[#e879f9]">${dm.name}</span><span class="tag text-xs px-1.5 py-0 rounded text-[#94a3b8]">${dm.field_type}</span>${dm.required?'<span class="text-xs text-red-400">req</span>':''}</div><div class="text-xs text-[#64748b] mt-0.5">${escHtml(dm.description||'')}</div>${dm.allowed_values?.length?`<div class="flex gap-1 flex-wrap mt-1">${dm.allowed_values.map(v=>`<span class="tag text-xs px-1.5 rounded text-[#c4c4d4]">${v}</span>`).join('')}</div>`:''}</div>`).join('')}</div></div>`:''}
+    </div>`
+  } else if (nt==='rag') {
+    det = `<div class="mt-3 space-y-2"><div class="flex gap-2 flex-wrap text-xs">
+      ${d.collection_name?`<span class="tag px-2 py-0.5 rounded text-[#38bdf8]">${d.collection_name}</span>`:''}
+      <span class="tag px-2 py-0.5 rounded text-[#94a3b8]">chunks: ${d.max_chunks??5}</span>
+      </div>
+      ${d.system_prompt?`<div><button onclick="toggleEl('sp${index}')" class="text-xs text-[#64748b] hover:text-[#818cf8]">System Prompt ▸</button><div id="sp${index}" class="hidden mt-1"><pre class="text-xs text-[#c4c4d4] bg-[#0d0d14] rounded-lg p-3 border border-[#2a2a3a] max-h-44 overflow-y-auto">${escHtml(d.system_prompt)}</pre></div></div>`:''}</div>`
+  }
+
+  const hasIn  = node.input_map  && Object.keys(node.input_map).length
+  const hasOut = node.output_map && Object.keys(node.output_map).length
+  const maps = (hasIn||hasOut) ? `<div class="mt-3 flex gap-4 flex-wrap">
+    ${hasIn?`<div class="flex-1 min-w-0"><div class="text-xs text-[#64748b] mb-1">Inputs</div>${Object.entries(node.input_map).map(([k,v])=>`<div class="flex gap-1 text-xs mt-0.5"><span class="text-[#818cf8] font-mono shrink-0">${k}</span><span class="text-[#3a3a50]">←</span><span class="text-[#64748b] font-mono truncate">${v}</span></div>`).join('')}</div>`:''}
+    ${hasOut?`<div class="flex-1 min-w-0"><div class="text-xs text-[#64748b] mb-1">Saves to state</div>${Object.entries(node.output_map).map(([k,v])=>`<div class="flex gap-1 text-xs mt-0.5"><span class="text-[#34d399] font-mono shrink-0">${k}</span><span class="text-[#3a3a50]">←</span><span class="text-[#64748b] font-mono truncate">${v}</span></div>`).join('')}</div>`:''}
+  </div>` : ''
+
+  const trans = node.transitions?.length ? `<div class="mt-2 flex gap-1.5 flex-wrap">${node.transitions.map(t=>`<div class="flex items-center gap-1.5"><span class="text-xs text-[#64748b]">${t.when==='always'?'→':`[${escHtml(t.when)}] →`}</span><span class="tag text-xs px-2 py-0.5 rounded text-[#818cf8]">${t.to}</span></div>`).join('')}</div>`
+    : (index===total-1?`<div class="mt-2 text-xs text-[#3a3a50]">End of workflow</div>`:'')
+
+  return `<div class="node-connector"><div class="card rounded-xl p-4 ${color} border fade-in">
+    <div class="flex items-start gap-3">
+      <div class="flex flex-col items-center gap-1 flex-shrink-0">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center text-sm ${color} border">${icon}</div>
+        ${index===0?'<span class="text-xs text-[#3a3a50]">start</span>':''}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-mono text-sm font-semibold text-white">${node.node_id}</span>
+          <span class="text-xs px-2 py-0.5 rounded-full border ${color} font-medium">${node.node_type}</span>
+        </div>
+        ${d.description?`<div class="text-xs text-[#64748b] mt-0.5">${escHtml(d.description)}</div>`:''}
+        ${det}${maps}${trans}
+      </div>
+    </div>
+  </div></div>`
+}
+
+// ─────────────────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────────────────
+function setSendLoading(p, on) {
+  document.getElementById(`${p}-send-spin`).classList.toggle('hidden', !on)
+  document.getElementById(`${p}-send-icon`).classList.toggle('hidden', on)
+}
+
+function autoResize(el) {
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+}
+
+function toggleEl(id) { document.getElementById(id)?.classList.toggle('hidden') }
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+init()
+</script>
+</body>
+</html>

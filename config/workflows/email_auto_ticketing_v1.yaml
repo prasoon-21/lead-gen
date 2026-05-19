@@ -1,0 +1,22 @@
+workflow_id: email_auto_ticketing_v1
+version: "1.0"
+description: "Classify an inbound customer conversation and prepare a basic ticket draft payload."
+start_at: classify_conversation
+nodes:
+  - node_id: classify_conversation
+    node_type: classification
+    config:
+      profile_id: email_auto_ticketing_v1
+      temperature: 0.1
+    input_map:
+      conversation_text: input.conversation_text
+      subject: input.subject
+      customer_email: input.customer_email
+      business_id: input.business_id
+    output_map:
+      outputs.classification: result
+      outputs.needs_ticket: result.needs_ticket
+      outputs.ticket_queue: result.ticket_queue
+      outputs.ticket_title: result.ticket_title
+      outputs.ticket_summary: result.ticket_summary
+    transitions: []

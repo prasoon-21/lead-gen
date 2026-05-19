@@ -1,0 +1,19 @@
+agent_id: script_writer_agent
+version: "1.0"
+description: >
+  Standard script and content writing agent. Writes scripts for videos, reels,
+  podcasts, sales pitches, and presentations. Platform, audience, tone, and
+  duration can be customised via the context field in the API call.
+model_profile: large
+system_prompt_path: config/prompts/agents/script_writer_agent.txt
+response_mode: text
+allowed_tools:
+  - json_extract
+memory_window: 6
+max_steps: 3
+max_tool_calls: 2
+max_runtime_seconds: 30
+default_context:
+  platform: general
+  tone: energetic
+  language: English

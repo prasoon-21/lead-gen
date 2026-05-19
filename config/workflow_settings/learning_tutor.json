@@ -1,0 +1,51 @@
+{
+  "workflow": "learning_tutor",
+  "version": "1.0",
+  "description": "AI Tutor for learning mode",
+  "vector_store": {
+    "provider": "qdrant",
+    "collection": "aurika_campus",
+    "filters": {
+      "must": [
+        { "field": "course", "op": "eq", "value": "{{course}}" },
+        { "field": "level", "op": "eq", "value": "{{level}}" },
+        { "field": "subject", "op": "eq", "value": "{{subject}}" }
+      ],
+      "should": [
+        { "field": "topic", "op": "eq", "value": "{{topic}}" }
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "nodes": [
+    {
+      "name": "subject_detector",
+      "type": "text_analyzer",
+      "model": "gemini-2.5-flash",
+      "model_profile": "small",
+      "system_prompt": "Detect subject from query. Output ONE word: Maths/Physics/Chemistry/Biology/Science/English/Hindi",
+      "output_format": "text",
+      "temperature": 0.3,
+      "max_tokens": 50
+    },
+    {
+      "name": "document_analyzer",
+      "type": "file_analyzer",
+      "model": "gemini-2.5-flash",
+      "model_profile": "small",
+      "system_prompt": "Analyze document and extract relevant content. Use proper math symbols.",
+      "temperature": 0.7
+    },
+    {
+      "name": "learning_agent",
+      "type": "agent",
+      "model": "gemini-2.5-flash",
+      "model_profile": "large",
+      "system_prompt_path": "config/prompts/learning_tutor.txt",
+      "embedding_collection": "aurika_campus_content",
+      "tools": ["qdrant_retriever"],
+      "temperature": 0.7,
+      "max_tokens": 4096
+    }
+  ]
+}

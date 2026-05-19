@@ -1,0 +1,46 @@
+# TEMPLATE — files starting with _ are skipped at load time.
+#
+# How to add a remote tool:
+#   1. Copy this file and rename it (without the leading _), e.g. create_product.yaml
+#   2. Fill in the fields below
+#   3. In the calling project, expose a POST endpoint at endpoint_url that:
+#        - Receives: { "arguments": {...}, "session_id": "...", "trace_id": "..." }
+#        - Returns:  { "result": {...} }
+#      If the target API expects the raw JSON body instead, set:
+#        request_body_mode: raw_arguments
+#      You can also map arguments into headers with `argument_headers`.
+#   4. Add the tool_name to the allowed_tools list of any agent YAML that needs it
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+tool_name: create_product                          # Must be unique across all tools
+description: Creates a new product in Aurika OS   # Shown to the LLM; be specific
+endpoint_url: https://aurika-os.com/tools/create_product
+endpoint_url_env: ""                              # Optional env var to override endpoint_url locally
+
+# Optional auth — the header value is read from an env var at runtime
+auth_header_name: X-Internal-Key   # HTTP header name to send
+auth_header_env: AURIKA_OS_API_KEY  # env var in .env that holds the secret value
+auth_header_prefix: ""              # Optional, e.g. "Bearer "
+
+timeout_seconds: 30
+request_body_mode: wrapped          # wrapped | raw_arguments
+static_headers: {}
+argument_headers: {}
+omit_arguments_from_body: []
+
+input_schema:
+  type: object
+  properties:
+    name:
+      type: string
+      description: Product name
+    price:
+      type: number
+      description: Product price in INR
+    category:
+      type: string
+      description: Product category (e.g. Books, Electronics)
+  required:
+    - name
+    - price

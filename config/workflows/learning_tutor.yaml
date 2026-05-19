@@ -1,0 +1,24 @@
+workflow_id: learning_tutor
+version: "1.0"
+description: >
+  K-12 personalized tutoring workflow.
+  Receives student context + detected subject from the route handler,
+  then runs the campus kernel agent which does RAG search + LLM tutoring
+  with full conversation memory per session.
+
+start_at: tutor_agent
+
+nodes:
+  - node_id: tutor_agent
+    node_type: agent
+    config:
+      agent_id: campus_kernel_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.text: text
+      outputs.steps: steps
+      outputs.metadata: metadata
+    transitions: []

@@ -1,0 +1,81 @@
+tool_name: aurika_tasks_create_task
+description: Create a formal task in Aurika OS Engage for a specific tenant after the user confirms the draft.
+base_url_env: AURIKA_OS_BASE_API_URL
+endpoint_url: /api/internal/tasks
+method: POST
+auth_header_name: Authorization
+auth_header_env: AURIKA_ENGAGE_INTERNAL_API_KEY
+auth_header_prefix: "Bearer "
+request_body_mode: raw_arguments
+argument_headers:
+  x-aurika-tenant-id: tenant_id
+omit_arguments_from_body:
+  - tenant_id
+  - confirmed
+timeout_seconds: 30
+input_schema:
+  type: object
+  properties:
+    tenant_id:
+      type: string
+      description: Aurika tenant id sent as the x-aurika-tenant-id header.
+    title:
+      type: string
+      description: Task title.
+    description:
+      type: string
+      description: Task description.
+    requesterId:
+      type: string
+      description: User id of the requester.
+    assigneeId:
+      type: string
+      description: User or agent id assigned to the task.
+    approverId:
+      type: string
+      description: User id that can approve or review the task.
+    dueDate:
+      type: string
+      description: Due date in YYYY-MM-DD format.
+    priority:
+      type: string
+      enum: [low, medium, high]
+      description: Priority of the task. Default to "medium" if the user has not specified one.
+    tags:
+      type: array
+      description: Optional task tags.
+      items:
+        type: string
+    dependentTaskIds:
+      type: array
+      description: Optional list of dependent task ids.
+      items:
+        type: string
+    connectedTaskIds:
+      type: array
+      description: Optional list of related task ids.
+      items:
+        type: string
+    attachments:
+      type: array
+      description: Optional attachment descriptors accepted by the downstream API.
+      items:
+        type: object
+    status:
+      type: string
+      description: Task status. Use todo unless the user explicitly asks for another state.
+    source:
+      type: string
+      description: Source of task creation. Use agent unless the user explicitly asks otherwise.
+    sourceAgentId:
+      type: string
+      description: Agent id that initiated the task creation.
+    parentTaskId:
+      type:
+        - string
+        - "null"
+      description: Optional parent task id.
+  required:
+    - tenant_id
+    - title
+    - priority

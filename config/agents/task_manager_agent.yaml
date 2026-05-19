@@ -1,0 +1,21 @@
+agent_id: task_manager_agent
+version: "1.0"
+description: "Task management agent for local todos and Aurika task records with confirmation-safe writes"
+model_profile: large
+system_prompt_path: config/prompts/agents/task_manager_agent.txt
+response_mode: text
+allowed_tools:
+  - todo_ensure_store
+  - todo_create
+  - todo_list
+  - todo_update
+  - todo_complete
+  - aurika_tasks_create_task
+  - aurika_users_get_workspace_users
+memory_window: 10
+max_steps: 10
+max_tool_calls: 8
+max_runtime_seconds: 60
+default_context:
+  domain: task_management
+  source_agent_id: task_manager_agent

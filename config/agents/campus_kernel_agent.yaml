@@ -1,0 +1,18 @@
+agent_id: campus_kernel_agent
+version: "1.0"
+description: "Campus tutoring kernel agent using internal blocks and optional web tools"
+model_profile: large
+system_prompt_path: config/prompts/campus/learning_tutor.txt
+response_mode: text
+allowed_tools:
+  - rag_search
+  - file_analyze
+  - image_generate
+  - json_extract
+  - web_search
+memory_window: 10
+max_steps: 8
+max_tool_calls: 6
+max_runtime_seconds: 60
+default_context:
+  board: CBSE

@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic Core — B2B Lead Generator</title>
+  <meta name="description" content="AI-powered B2B lead generation. Search the web, scrape companies, and view structured results instantly." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lv: {
+              50:  '#f5f5ff',
+              100: '#ececff',
+              200: '#d9d9ff',
+              300: '#c1c1ff',
+              400: '#a3a3ff',
+              500: '#8181ff',
+              600: '#6363ff',
+              700: '#5252e6',
+              800: '#4545c0',
+              900: '#3a3a9b',
+              950: '#1a1a3a',
+            }
+          },
+          fontFamily: { outfit: ['Outfit', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      background-color: #0c0c17;
+      color: #e2e8f0;
+      font-family: 'Outfit', sans-serif;
+      background-image:
+        radial-gradient(ellipse at 5% 10%,  rgba(129,129,255,.07) 0%, transparent 50%),
+        radial-gradient(ellipse at 95% 90%, rgba(142,197,252,.06) 0%, transparent 50%);
+      min-height: 100vh;
+    }
+
+    /* Glass card */
+    .glass {
+      background: rgba(20, 20, 40, 0.65);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(129,129,255,.12);
+    }
+
+    /* Premium button */
+    .btn-run {
+      background: linear-gradient(135deg, #c4b5fd 0%, #818cf8 50%, #67e8f9 100%);
+      background-size: 200% 200%;
+      background-position: left center;
+      transition: background-position .4s ease, transform .2s ease, box-shadow .2s ease;
+      box-shadow: 0 4px 20px rgba(129,129,255,.35);
+      color: #1a1a3a;
+      font-weight: 700;
+    }
+    .btn-run:hover:not(:disabled) {
+      background-position: right center;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(129,129,255,.45);
+    }
+    .btn-run:active:not(:disabled) { transform: translateY(0); }
+    .btn-run:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* Input */
+    .field {
+      width: 100%;
+      background: rgba(10,10,20,.7);
+      border: 1px solid rgba(129,129,255,.18);
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #e2e8f0;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field::placeholder { color: rgba(129,129,255,.3); }
+    .field:focus {
+      border-color: rgba(129,129,255,.55);
+      box-shadow: 0 0 0 3px rgba(129,129,255,.1);
+    }
+
+    /* Table row hover */
+    .lead-row { transition: background .15s ease; }
+    .lead-row:hover { background: rgba(129,129,255,.06); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a3a6a; }
+
+    /* Log entry */
+    .log-entry { animation: fadeSlideIn .25s ease forwards; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Tag chip */
+    .chip {
+      display: inline-block;
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(129,129,255,.12);
+      color: #c1c1ff;
+      white-space: nowrap;
+    }
+
+    /* Pulse dot */
+    .pulse-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #a3a3ff;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .4; transform: scale(.7); }
+    }
+
+    /* Progress bar */
+    #progress-bar {
+      height: 2px;
+      background: linear-gradient(90deg, #818cf8, #67e8f9);
+      border-radius: 2px;
+      transition: width .4s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ── -->
+  <nav class="glass sticky top-0 z-50 px-8 py-4 flex items-center justify-between border-b border-lv-900/50">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-lv-400 to-lv-700 flex items-center justify-center shadow-lg shadow-lv-500/25">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-lv-100 to-lv-400">Agentic Core</h1>
+        <p class="text-[10px] text-lv-400/60 uppercase tracking-[.18em] font-semibold">B2B Lead Intelligence</p>
+      </div>
+    </div>
+    <a href="/" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+      Dashboard
+    </a>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="max-w-[1600px] mx-auto px-8 py-8 grid grid-cols-12 gap-7">
+
+    <!-- Left: Controls + Log -->
+    <div class="col-span-12 lg:col-span-4 space-y-5">
+
+      <!-- Search Panel -->
+      <section class="glass rounded-3xl p-6 shadow-2xl">
+        <h2 class="text-base font-semibold mb-5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-5 bg-gradient-to-b from-lv-400 to-lv-600 rounded-full"></span>
+            Discovery Parameters
+          </div>
+          <div id="mode-badge" class="text-[9px] px-2 py-0.5 rounded-md bg-lv-500/10 border border-lv-500/20 text-lv-400 font-bold uppercase tracking-widest">Generic</div>
+        </h2>
+
+        <!-- Mode Toggle -->
+        <div class="flex p-1 bg-lv-950/50 rounded-xl border border-lv-500/10 mb-6">
+          <button id="btn-mode-generic" class="flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg">GENERIC</button>
+          <button id="btn-mode-velit" class="flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200">VELITCAMPING</button>
+        </div>
+
+        <div class="space-y-4">
+          <div id="industry-wrap">
+            <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Industry</label>
+            <input id="industry-input" type="text" class="field"
+              placeholder="e.g. SaaS, Fintech, Solar Energy" />
+          </div>
+          <div>
+            <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Location</label>
+            <input id="location-input" type="text" class="field"
+              placeholder="e.g. London, San Francisco, Mumbai" />
+          </div>
+
+          <!-- Progress bar (hidden until run) -->
+          <div id="progress-wrap" class="hidden pt-1 px-1">
+            <div class="w-full bg-lv-900/40 rounded-full h-0.5">
+              <div id="progress-bar" style="width:0%"></div>
+            </div>
+          </div>
+
+          <button id="start-btn" class="btn-run w-full py-4 rounded-2xl text-sm flex items-center justify-center gap-2 mt-2">
+            <svg id="loader-icon" class="hidden animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <span id="btn-text">🔍 Generate Leads</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Stat cards -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-lv-400">
+          <div class="text-[10px] text-lv-400 uppercase font-bold tracking-wider">Leads Found</div>
+          <div id="leads-count" class="text-2xl font-bold mt-0.5">0</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-sky-400">
+          <div class="text-[10px] text-sky-400 uppercase font-bold tracking-wider">Time Elapsed</div>
+          <div id="timer" class="text-2xl font-bold mt-0.5">0s</div>
+        </div>
+      </div>
+
+      <!-- LinkedIn Session Sync -->
+      <section class="glass rounded-3xl p-5 shadow-2xl space-y-4">
+        <h2 class="text-xs font-semibold flex items-center justify-between text-lv-400">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-lv-400" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+            </svg>
+            LinkedIn Session Sync
+          </div>
+          <span id="cookie-status" class="text-[9px] px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold uppercase tracking-wider">Unverified</span>
+        </h2>
+        <p class="text-[11px] text-lv-300/70 leading-relaxed">
+          The scraper runs in a separate browser sandbox. Paste your LinkedIn <code class="text-lv-300 bg-lv-900/50 px-1.5 py-0.5 rounded font-mono">li_at</code> cookie below to authenticate instantly.
+        </p>
+        <div class="flex gap-2">
+          <input id="cookie-input" type="password" class="field flex-1 text-xs" placeholder="Paste li_at cookie value here..." />
+          <button id="save-cookie-btn" class="px-4 rounded-xl bg-lv-600 hover:bg-lv-500 text-xs font-bold text-white transition-all whitespace-nowrap">
+            Save
+          </button>
+        </div>
+        <p class="text-[10px] text-lv-500/80 leading-normal flex items-start gap-1">
+          <span>💡</span>
+          <span>To get this: Log in to <a href="https://linkedin.com" target="_blank" class="text-lv-400 underline hover:text-lv-300">LinkedIn</a> on your browser, press F12 -> Application -> Cookies -> linkedin.com -> copy the <code class="font-mono text-lv-300">li_at</code> value.</span>
+        </p>
+      </section>
+
+      <!-- Agent Activity Log -->
+      <section class="glass rounded-3xl p-5 shadow-2xl" style="min-height:260px; max-height:380px; display:flex; flex-direction:column;">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-[11px] font-bold uppercase tracking-wider text-lv-400">Agent Activity</h2>
+          <div id="log-live" class="hidden flex items-center gap-1.5">
+            <div class="pulse-dot"></div>
+            <span class="text-[9px] text-lv-400 uppercase font-semibold">Live</span>
+          </div>
+        </div>
+        <div id="log-container" class="flex-1 overflow-y-auto space-y-2 pr-1">
+          <div class="text-[11px] text-lv-700 italic">Waiting for discovery to start...</div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Right: Results Table -->
+    <div class="col-span-12 lg:col-span-8 flex flex-col gap-4">
+
+      <!-- Action bar -->
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-lv-500">Results are shown in real-time as the agent discovers leads via web search &amp; scraping.</p>
+        <div class="flex gap-2">
+          <button id="export-csv-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Export CSV
+          </button>
+          <button id="export-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Export JSON
+          </button>
+          <button id="deep-research-btn" class="px-4 py-2 rounded-xl bg-lv-600 hover:bg-lv-500 text-[11px] font-bold text-white shadow-lg shadow-lv-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+            Deep Research Selected
+          </button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <section class="glass rounded-[28px] overflow-hidden shadow-2xl flex flex-col flex-1">
+        <div class="overflow-x-auto flex-1">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-lv-500/10" style="background:rgba(30,30,60,.5)">
+                <th class="px-5 py-4 w-10">
+                  <input type="checkbox" id="select-all-checkbox" class="rounded border-lv-500/30 bg-lv-900/50 text-lv-500 focus:ring-lv-500/20">
+                </th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Company</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Founder / Contact</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Legitimacy Check</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Location</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Value Prop</th>
+              </tr>
+            </thead>
+            <tbody id="leads-tbody" class="divide-y divide-lv-500/5">
+              <tr id="empty-state">
+                <td colspan="6" class="px-6 py-24 text-center">
+                  <div class="flex flex-col items-center gap-4 text-lv-700">
+                    <svg class="w-14 h-14 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <p class="text-sm">Enter an industry and location, then click <strong class="text-lv-500">Generate Leads</strong>.</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ── DEEP RESEARCH MODAL ── -->
+  <div id="research-modal" class="fixed inset-0 z-[100] hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="glass w-full max-w-5xl max-h-[85vh] rounded-[32px] shadow-2xl flex flex-col overflow-hidden border border-lv-500/20">
+        <div class="px-8 py-6 border-b border-lv-500/10 flex items-center justify-between bg-lv-950/40">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-3">
+              <svg class="w-6 h-6 text-lv-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+              Deep Company Intelligence
+            </h2>
+            <p class="text-xs text-lv-400/70 mt-1">Comprehensive research reports generated by AI researchers.</p>
+          </div>
+          <button id="close-modal-btn" class="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <svg class="w-6 h-6 text-lv-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        
+        <div id="modal-body" class="flex-1 overflow-y-auto p-8 space-y-8 bg-lv-950/20">
+          <!-- Research entries will go here -->
+          <div id="research-loading-state" class="hidden flex flex-col items-center justify-center py-20 text-center">
+            <div class="relative w-20 h-20 mb-6">
+              <div class="absolute inset-0 rounded-full border-4 border-lv-500/20"></div>
+              <div class="absolute inset-0 rounded-full border-4 border-lv-400 border-t-transparent animate-spin"></div>
+            </div>
+            <h3 class="text-lg font-medium text-lv-200">Analyzing Companies...</h3>
+            <p class="text-sm text-lv-500 max-w-sm mt-2">Our AI is currently scouring the web for deep insights. This may take a minute.</p>
+          </div>
+          <div id="research-results-container" class="space-y-10"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── State ────────────────────────────────────────────────────────────────
+    const state = {
+      leads: [],
+      selectedIds: new Set(),
+      running: false,
+      researching: false,
+      startTime: null,
+      timerInterval: null,
+      mode: 'generic', // 'generic' | 'velit'
+    };
+
+    // ── DOM refs ─────────────────────────────────────────────────────────────
+    const startBtn       = document.getElementById('start-btn');
+    const loaderIcon     = document.getElementById('loader-icon');
+    const btnText        = document.getElementById('btn-text');
+    const industryInput  = document.getElementById('industry-input');
+    const locationInput  = document.getElementById('location-input');
+    const logContainer   = document.getElementById('log-container');
+    const logLive        = document.getElementById('log-live');
+    const leadsTbody     = document.getElementById('leads-tbody');
+    const leadsCount     = document.getElementById('leads-count');
+    const timerDisplay   = document.getElementById('timer');
+    const progressWrap   = document.getElementById('progress-wrap');
+    const progressBar    = document.getElementById('progress-bar');
+    const selectAllCheck = document.getElementById('select-all-checkbox');
+    const deepResBtn     = document.getElementById('deep-research-btn');
+    const modal          = document.getElementById('research-modal');
+    const closeModalBtn  = document.getElementById('close-modal-btn');
+    const modalResults   = document.getElementById('research-results-container');
+    const modalLoading   = document.getElementById('research-loading-state');
+
+    const btnModeGeneric = document.getElementById('btn-mode-generic');
+    const btnModeVelit   = document.getElementById('btn-mode-velit');
+    const modeBadge      = document.getElementById('mode-badge');
+    const industryWrap   = document.getElementById('industry-wrap');
+
+    // ── Mode Switching ────────────────────────────────────────────────────────
+    function setMode(mode) {
+      state.mode = mode;
+      if (mode === 'generic') {
+        btnModeGeneric.className = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg';
+        btnModeVelit.className   = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200';
+        modeBadge.textContent = 'Generic';
+        modeBadge.className = 'text-[9px] px-2 py-0.5 rounded-md bg-lv-500/10 border border-lv-500/20 text-lv-400 font-bold uppercase tracking-widest';
+        industryWrap.classList.remove('hidden');
+        industryInput.value = '';
+      } else {
+        btnModeVelit.className   = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg';
+        btnModeGeneric.className = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200';
+        modeBadge.textContent = 'VelitCamping';
+        modeBadge.className = 'text-[9px] px-2 py-0.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-400 font-bold uppercase tracking-widest';
+        industryWrap.classList.add('hidden');
+        industryInput.value = 'Van Upfitters / RV Builders';
+      }
+    }
+
+    btnModeGeneric.addEventListener('click', () => setMode('generic'));
+    btnModeVelit.addEventListener('click', () => setMode('velit'));
+
+    // ── Logging ──────────────────────────────────────────────────────────────
+    function addLog(message, type = 'info') {
+      const colors = {
+        success: 'border-l-green-400 bg-green-400/5 text-green-200',
+        error:   'border-l-red-400   bg-red-400/5   text-red-300',
+        info:    'border-l-lv-500    text-lv-200',
+      };
+      const el = document.createElement('div');
+      el.className = `log-entry text-[11px] p-2.5 rounded-xl border border-lv-500/10 border-l-2 leading-relaxed ${colors[type] || colors.info}`;
+      const ts = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      el.innerHTML = `<span class="text-[9px] opacity-50 block mb-0.5">${ts}</span>${message}`;
+      // Clear placeholder on first real log
+      if (logContainer.querySelector('.italic')) logContainer.innerHTML = '';
+      logContainer.prepend(el);
+    }
+
+    // ── Timer ─────────────────────────────────────────────────────────────────
+    function startTimer() {
+      state.startTime = Date.now();
+      state.timerInterval = setInterval(() => {
+        timerDisplay.textContent = Math.floor((Date.now() - state.startTime) / 1000) + 's';
+      }, 500);
+    }
+    function stopTimer() { clearInterval(state.timerInterval); }
+
+    // ── Progress animation ────────────────────────────────────────────────────
+    let progressStep = 0;
+    const progressSteps = [10, 25, 42, 60, 75, 88];
+    let progressInterval;
+    function startProgress() {
+      progressStep = 0;
+      progressWrap.classList.remove('hidden');
+      progressBar.style.width = '5%';
+      progressInterval = setInterval(() => {
+        if (progressStep < progressSteps.length) {
+          progressBar.style.width = progressSteps[progressStep++] + '%';
+        }
+      }, 12000 / progressSteps.length);
+    }
+    function finishProgress() {
+      clearInterval(progressInterval);
+      progressBar.style.width = '100%';
+      setTimeout(() => progressWrap.classList.add('hidden'), 800);
+    }
+
+    // ── Table rendering ───────────────────────────────────────────────────────
+    function renderTable() {
+      document.getElementById('empty-state').classList.toggle('hidden', state.leads.length > 0);
+      // Remove all non-empty-state rows
+      [...leadsTbody.querySelectorAll('tr:not(#empty-state)')].forEach(r => r.remove());
+
+      state.leads.forEach((lead, index) => {
+        const techRaw = lead.tech_stack;
+        const techList = Array.isArray(techRaw)
+          ? techRaw.map(t => String(t).trim()).filter(Boolean)
+          : String(techRaw || '').split(',').map(t => t.trim()).filter(Boolean);
+        const techChips = techList.map(t => `<span class="chip">${t}</span>`).join(' ');
+
+        const row = document.createElement('tr');
+        row.className = 'lead-row';
+        const isSelected = state.selectedIds.has(lead.company_name);
+        
+        // Verification UI
+        const vStatus = lead.verification_status || 'Not Verified';
+        const vColor = vStatus === 'valid' ? 'text-green-400' : (vStatus === 'risky' ? 'text-yellow-400' : (vStatus === 'invalid' ? 'text-red-400' : 'text-lv-500'));
+
+        row.innerHTML = `
+          <td class="px-5 py-4">
+            <input type="checkbox" class="lead-checkbox rounded border-lv-500/30 bg-lv-900/50 text-lv-500 focus:ring-lv-500/20" 
+              ${isSelected ? 'checked' : ''} data-id="${lead.company_name}">
+          </td>
+          <td class="px-5 py-4">
+            <div class="font-bold text-white text-sm leading-tight">${lead.company_name || '—'}</div>
+            ${lead.company_website
+              ? `<a href="${lead.company_website}" target="_blank" rel="noopener"
+                   class="text-[10px] text-lv-400 hover:text-lv-200 transition-colors truncate max-w-[180px] block mt-1">
+                   ${lead.company_website.replace(/^https?:\/\//, '')}
+                 </a>`
+              : ''}
+          </td>
+          <td class="px-5 py-4">
+            <div class="flex flex-col gap-1">
+              <div class="text-sm text-lv-100 font-medium">${lead.founder_name || '—'}</div>
+              <div class="text-[11px] text-lv-400">${lead.contact_email || '—'}</div>
+              
+              ${(lead.linkedin_url && (!lead.contact_email || lead.contact_email === '—')) 
+                ? `<button onclick="window.researchFounder('${lead.company_name}', '${lead.founder_name}', '${lead.linkedin_url}')" 
+                    class="mt-1 px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/30 text-[9px] font-bold text-blue-300 hover:bg-blue-500/20 transition-all uppercase flex items-center gap-1 w-fit">
+                    <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                    Find LinkedIn Contact
+                   </button>` 
+                : ''}
+            </div>
+          </td>
+          <td class="px-5 py-4">
+            <div class="flex items-center gap-3">
+               ${lead.verifying 
+                 ? '<div class="pulse-dot"></div><span class="text-[10px] text-lv-500">Checking...</span>' 
+                 : `<span class="text-[10px] font-bold uppercase tracking-wider ${vColor}">${vStatus}</span>`}
+               
+               ${(!lead.verification_status && !lead.verifying && lead.contact_email && lead.contact_email !== '—') 
+                 ? `<button onclick="window.verifyLeadByIndex(${index})" class="px-2 py-1 rounded-md bg-lv-500/10 border border-lv-500/30 text-[9px] font-bold text-lv-300 hover:bg-lv-500/20 transition-all uppercase">Verify</button>` 
+                 : ''}
+            </div>
+            ${lead.verification_message ? `<div class="text-[9px] text-lv-600 mt-1 max-w-[150px] truncate" title="${lead.verification_message}">${lead.verification_message}</div>` : ''}
+          </td>
+          <td class="px-5 py-4">
+            <div class="text-[11px] text-lv-200 font-medium">${lead.location || '—'}</div>
+            <div class="text-[9px] text-lv-500 uppercase font-bold mt-0.5">${lead.industry || 'Upfitter'}</div>
+          </td>
+          <td class="px-5 py-4 max-w-[220px]">
+            <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-3"
+               title="${(lead.value_proposition || '').replace(/"/g,'&quot;')}">
+               ${lead.value_proposition || '—'}
+            </p>
+          </td>
+        `;
+        leadsTbody.appendChild(row);
+      });
+
+      leadsCount.textContent = state.leads.length;
+      updateSelectedCount();
+    }
+
+    // Expose functions to global scope
+    window.verifyLeadByIndex = (index) => {
+      const lead = state.leads[index];
+      if (lead) verifyLead(lead);
+    };
+
+    window.researchFounder = async (company, name, linkedinUrl) => {
+      addLog(`Targeting LinkedIn profile for <strong>${name}</strong> (${company})...`, 'info');
+      try {
+        const res = await fetch('/api/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_id: 'lead_gen_agent',
+            message: `Use the linkedin_research tool on this profile: ${linkedinUrl}. Find the personal contact email and phone number for ${name} at ${company}. Return ONLY a JSON object with contact_email and contact_phone.`,
+            session_id: 'LR_' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+            context: { linkedin_url: linkedinUrl, founder_name: name, company_name: company }
+          })
+        });
+        const data = await res.json();
+        const json = data.json || {};
+        
+        // Find lead in state and update
+        const lead = state.leads.find(l => l.company_name === company);
+        if (lead) {
+          if (json.contact_email || json.contact_phone) {
+            if (json.contact_email) lead.contact_email = json.contact_email;
+            if (json.contact_phone) lead.contact_phone = json.contact_phone;
+            renderTable();
+            addLog(`✅ LinkedIn research complete for ${name}.`, 'success');
+          } else if (data.success && data.text) {
+            // Scraper succeeded but profile has no public contact info
+            addLog(`ℹ️ LinkedIn research complete for ${name}: ${data.text}`, 'info');
+          } else {
+            const errorMsg = data.text || "Could not retrieve contact information from LinkedIn. Make sure your session is active.";
+            addLog(`⚠️ LinkedIn research for ${name}: ${errorMsg}`, 'error');
+          }
+        }
+      } catch (err) {
+        addLog(`❌ LinkedIn research failed: ${err.message}`, 'error');
+      }
+    };
+
+    async function verifyLead(lead) {
+      lead.verifying = true;
+      renderTable(); // Update UI to show "Checking..."
+      try {
+        const res = await fetch('/api/leads/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: lead.contact_email })
+        });
+        const data = await res.json();
+        
+        lead.verification_status = data.verification.status;
+        lead.verification_message = data.verification.message;
+        
+        renderTable(); 
+      } catch (err) {
+        console.error('Verification failed', err);
+      } finally {
+        lead.verifying = false;
+        renderTable();
+      }
+    }
+    
+    async function autoSaveToSheets(leads) {
+      if (!leads || leads.length === 0) return;
+      addLog(`Auto-saving ${leads.length} leads to Google Sheets...`, 'info');
+      try {
+        const res = await fetch('/api/leads/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leads, mode: state.mode })
+        });
+        const data = await res.json();
+        addLog(`✅ Auto-save: ${data.added} new added, ${data.duplicates_skipped} duplicates skipped.`, 'success');
+      } catch (err) {
+        addLog(`❌ Auto-save failed: ${err.message}`, 'error');
+      }
+    }
+
+    // ── Main: run the lead-gen agent ──────────────────────────────────────────
+    async function runLeadGen() {
+      const industry = industryInput.value.trim();
+      const location = locationInput.value.trim();
+
+      if (state.mode === 'generic' && !industry) {
+        addLog('Please fill in the Industry field.', 'error');
+        return;
+      }
+      if (!location) {
+        addLog('Please fill in the Location field.', 'error');
+        return;
+      }
+
+      const sessionId = 'LGEN_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+      state.leads = [];
+      timerDisplay.textContent = '0s';
+      renderTable();
+      setBusy(true);
+      startTimer();
+      startProgress();
+
+      if (state.mode === 'velit') {
+        addLog(`Searching for <strong>Upfitters</strong> in <strong>${location}</strong> for VelitCamping...`);
+      } else {
+        addLog(`Starting web search for <strong>${industry}</strong> companies in <strong>${location}</strong>...`);
+      }
+
+      try {
+        let existingCompanies = [];
+        try {
+          const exRes = await fetch(`/api/leads/existing?mode=${state.mode}`);
+          if (exRes.ok) {
+            const exData = await exRes.json();
+            existingCompanies = exData.companies || [];
+          }
+        } catch (e) {
+          console.warn('Failed to fetch existing companies:', e);
+        }
+
+        let deduplicationInstruction = '';
+        if (existingCompanies.length > 0) {
+          deduplicationInstruction = `\n\nCRITICAL DEDUPLICATION RULE:\nDo NOT generate leads for any of the following companies, as we already have them: ${existingCompanies.join(', ')}.`;
+        }
+        
+        let fallbackInstruction = `\n\nFALLBACK INSTRUCTION:\nIf there are no new companies left in "${location}" (after excluding the ones we already have) or you cannot find any new leads there, fall back to searching for leads in nearby places and cities around "${location}".`;
+
+        let promptMessage = state.mode === 'velit' 
+          ? `You are working for VelitCamping. Your mission is to find "Upfitters" (van/RV builders) in "${location}" (USA).
+             For each company found, you MUST retrieve the Founder/CEO's personal contact information.
+             
+             REQUIRED STEPS:
+             1. Identify the company and its website.
+             2. Find the Founder/CEO's name.
+             3. MANDATORY: Find the Founder's LinkedIn URL. If not found on the website, use web_search (e.g. "LinkedIn [Founder Name] [Company Name]").
+             4. MANDATORY: Use the "linkedin_research" tool on the Founder's profile URL.
+             5. Extract their PERSONAL EMAIL and PHONE NUMBER from LinkedIn. 
+             6. DO NOT settle for general emails (like info@ or sales@) if you can find the founder's LinkedIn.
+             7. (Optional) Find other key people related to the company on LinkedIn.
+             
+             VelitCamping sells high-end heaters/coolers/batteries, so focus on quality custom van upfitters.
+             Return results in the required JSON schema with founder_name, contact_email (founder's personal one), and contact_phone.`
+          : `Find B2B leads for the "${industry}" industry in "${location}". Research each company thoroughly using web search and website scraping.`;
+
+        promptMessage += deduplicationInstruction + fallbackInstruction;
+
+        const res = await fetch('/api/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_id: 'lead_gen_agent',
+            message: `${promptMessage} Return results in the required JSON schema.`,
+            session_id: sessionId,
+            context: { industry, location, output_mode: 'json_list', mode: state.mode }
+          })
+        });
+
+        const rawText = await res.text();
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${rawText.substring(0, 100)}`);
+
+        let data = {};
+        try { 
+          data = JSON.parse(rawText); 
+          // Show agent steps in logs
+          if (data.steps && Array.isArray(data.steps)) {
+            data.steps.forEach(step => {
+              if (step.tool) {
+                addLog(`⚙️ Agent used <strong>${step.tool}</strong>`, 'info');
+              }
+            });
+          }
+        } catch (_) {}
+
+        let leads = [];
+        if (data.json?.leads && Array.isArray(data.json.leads)) leads = data.json.leads;
+        else if (Array.isArray(data.json)) leads = data.json; 
+        if (leads.length === 0) leads = extractLeadsFromText(rawText);
+
+        if (leads.length === 0) {
+          addLog('Agent returned no leads. Try a different industry or location.', 'error');
+        } else {
+          const validLeads = leads.filter(l => (l.company_name || l.company || l.name));
+          state.leads = validLeads.map(normalizeLead);
+          renderTable();
+          addLog(`✅ Found <strong>${state.leads.length}</strong> leads.`, 'success');
+          
+          // AUTO-SAVE DIRECTLY
+          await autoSaveToSheets(state.leads);
+        }
+
+      } catch (err) {
+        addLog(`❌ Error: ${err.message}`, 'error');
+      } finally {
+        setBusy(false);
+        stopTimer();
+        finishProgress();
+      }
+    }
+
+    function updateSelectedCount() {
+      const count = state.selectedIds.size;
+      deepResBtn.disabled = count === 0 || state.running || state.researching;
+      deepResBtn.innerHTML = `
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        Deep Research (${count})
+      `;
+    }
+
+    // ── Set busy / idle UI state ──────────────────────────────────────────────
+    function setBusy(busy) {
+      state.running = busy;
+      startBtn.disabled = busy;
+      loaderIcon.classList.toggle('hidden', !busy);
+      btnText.textContent = busy ? 'Agent is researching...' : '🔍 Generate Leads';
+      logLive.classList.toggle('hidden', !busy);
+    }
+
+    async function runDeepResearch() {
+      const selectedLeads = state.leads.filter(l => state.selectedIds.has(l.company_name));
+      if (!selectedLeads.length) return;
+
+      state.researching = true;
+      updateSelectedCount();
+      modal.classList.remove('hidden');
+      modalResults.innerHTML = '';
+      modalLoading.classList.remove('hidden');
+
+      addLog(`Starting deep research for ${selectedLeads.length} companies...`, 'info');
+
+      for (const lead of selectedLeads) {
+        const companyName = lead.company_name;
+        const resultEl = document.createElement('div');
+        resultEl.className = 'glass rounded-3xl p-8 border border-lv-500/10';
+        resultEl.innerHTML = `
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-2xl bg-lv-500/20 flex items-center justify-center text-lv-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+              </div>
+              <div>
+                <h3 class="text-xl font-bold text-white">${companyName}</h3>
+                <p class="text-sm text-lv-400">${lead.company_website || ''}</p>
+              </div>
+            </div>
+            <div class="status-badge flex items-center gap-2 px-3 py-1 rounded-full bg-lv-500/10 border border-lv-500/20">
+              <div class="pulse-dot"></div>
+              <span class="text-[10px] text-lv-400 uppercase font-bold tracking-widest">Analyzing</span>
+            </div>
+          </div>
+          <div class="research-content space-y-6 text-lv-300 animate-pulse">
+            <div class="h-4 bg-lv-500/10 rounded w-3/4"></div>
+            <div class="h-4 bg-lv-500/10 rounded w-1/2"></div>
+            <div class="h-4 bg-lv-500/10 rounded w-5/6"></div>
+          </div>
+        `;
+        modalResults.appendChild(resultEl);
+        
+        try {
+          const res = await fetch('/api/agent/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              agent_id: 'company_researcher',
+              message: `Perform a deep research report for the company "${companyName}". Use their website "${lead.company_website}" and search the web for their key executives, recent news, competitors, and detailed product offerings. Format the report in clean Markdown with professional headings.`,
+              session_id: 'DR_' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+              context: { company_name: companyName, website: lead.company_website }
+            })
+          });
+
+          const data = await res.json();
+          // The agent might return text or a JSON object with a 'report' field
+          const content = data.text || data.json?.report || data.json?.text || (data.json ? JSON.stringify(data.json, null, 2) : null) || 'No detailed report generated.';
+          
+          // Update the UI with real content
+          resultEl.querySelector('.status-badge').innerHTML = `
+            <svg class="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span class="text-[10px] text-green-400 uppercase font-bold tracking-widest">Complete</span>
+          `;
+          resultEl.querySelector('.research-content').classList.remove('animate-pulse');
+          resultEl.querySelector('.research-content').innerHTML = `
+            <div class="prose prose-invert prose-sm max-w-none">
+              ${formatMarkdown(content)}
+            </div>
+          `;
+          addLog(`✅ Deep research complete for <strong>${companyName}</strong>.`, 'success');
+
+        } catch (err) {
+          resultEl.querySelector('.status-badge').innerHTML = `
+            <span class="text-[10px] text-red-400 uppercase font-bold tracking-widest">Error</span>
+          `;
+          resultEl.querySelector('.research-content').innerHTML = `<p class="text-red-400">Failed to research ${companyName}: ${err.message}</p>`;
+        }
+      }
+
+      state.researching = false;
+      modalLoading.classList.add('hidden');
+      updateSelectedCount();
+    }
+
+    function formatMarkdown(text) {
+      // Very basic markdown to HTML for the modal
+      return text
+        .replace(/^### (.*$)/gim, '<h4 class="text-lg font-bold text-white mt-6 mb-3">$1</h4>')
+        .replace(/^## (.*$)/gim, '<h3 class="text-xl font-bold text-lv-200 mt-8 mb-4 border-b border-lv-500/10 pb-2">$1</h3>')
+        .replace(/^# (.*$)/gim, '<h2 class="text-2xl font-bold text-lv-100 mt-10 mb-6">$1</h2>')
+        .replace(/^\* (.*$)/gim, '<li class="ml-4 mb-1 text-lv-300">$1</li>')
+        .replace(/^- (.*$)/gim, '<li class="ml-4 mb-1 text-lv-300">$1</li>')
+        .replace(/\*\*(.*)\*\*/gim, '<strong class="text-white">$1</strong>')
+        .replace(/\n\n/g, '<br><br>')
+        .replace(/\n/g, '<br>');
+    }
+
+    // ── Robust JSON extraction from raw text ──────────────────────────────────
+    // Handles LLM quirks: markdown fences, single quotes, trailing commas, etc.
+    function extractLeadsFromText(text) {
+      if (!text) return [];
+      
+      // 1. Pre-clean: strip markdown fences and control characters
+      text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      
+      // 2. Identify potential JSON boundaries
+      const startIdx = text.indexOf('[');
+      const endIdx = text.lastIndexOf(']');
+      
+      if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+        // Try looking for { "leads": [...] }
+        const leadsMatch = text.match(/\{\s*"leads"\s*:\s*\[/i);
+        if (!leadsMatch) return [];
+        // If we found the start of the leads array, use that
+      }
+
+      const candidate = text.substring(startIdx, endIdx + 1);
+
+      // 3. Multi-pass parsing strategy
+      const attempts = [
+        () => JSON.parse(candidate), // Pure valid JSON
+        () => {
+          // Clean common LLM hallucinations
+          const cleaned = candidate
+            .replace(/,\s*([}\]])/g, '$1')           // trailing commas
+            .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":') // single-quoted keys
+            .replace(/:\s*'([^']*)'/g, ': "$1"')     // single-quoted values
+            .replace(/\n/g, ' ')                     // newlines in strings (risky but often helpful)
+            .replace(/\r/g, '');
+          return JSON.parse(cleaned);
+        },
+        () => {
+          // Last resort: find individual objects and parse them one by one
+          const objects = [];
+          const regex = /\{[\s\S]*?\}/g;
+          let m;
+          while ((m = regex.exec(candidate)) !== null) {
+            try { objects.push(JSON.parse(m[0])); } catch(_) {}
+          }
+          return objects.length ? objects : null;
+        }
+      ];
+
+      for (const fn of attempts) {
+        try {
+          const result = fn();
+          let candidateLeads = [];
+          if (Array.isArray(result)) candidateLeads = result;
+          else if (result && result.leads && Array.isArray(result.leads)) candidateLeads = result.leads;
+          
+          // CRITICAL: Filter out internal agent objects (thoughts, tool calls, etc.)
+          const filtered = candidateLeads.filter(obj => {
+            if (!obj || typeof obj !== 'object') return false;
+            // A valid lead should have at least one of these "telltale" keys
+            const leadKeys = ['company', 'name', 'website', 'email', 'founder', 'tech', 'stack'];
+            return Object.keys(obj).some(k => leadKeys.some(lk => k.toLowerCase().includes(lk)));
+          });
+
+          if (filtered.length > 0) return filtered;
+        } catch (e) {}
+      }
+
+      return [];
+    }
+
+    function normalizeLead(raw) {
+      const lead = {};
+      const find = (keywords) => {
+        const key = Object.keys(raw).find(k => 
+          keywords.some(kw => k.toLowerCase().replace(/_/g,' ').includes(kw))
+        );
+        return key ? raw[key] : null;
+      };
+
+      lead.company_name      = find(['company name', 'company', 'name', 'business']) || '—';
+      lead.company_website   = find(['website', 'url', 'domain', 'link']);
+      lead.company_size      = find(['size', 'employees', 'headcount']);
+      lead.founder_name      = find(['founder', 'ceo', 'contact name', 'owner']) || '—';
+      lead.linkedin_url      = find(['linkedin', 'profile']);
+      lead.contact_email     = find(['email', 'mail']) || '—';
+      lead.contact_phone     = find(['phone', 'mobile', 'tel']) || '—';
+      lead.location          = find(['location', 'city', 'state', 'address']) || '—';
+      lead.industry          = find(['industry', 'type', 'specialty']) || 'Upfitter';
+      lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
+      
+      return lead;
+    }
+
+    // ── Export helpers ────────────────────────────────────────────────────────
+    function downloadBlob(blob, filename) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById('export-csv-btn').addEventListener('click', () => {
+      if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
+      const cols = ['company_name','company_website','company_size','founder_name','linkedin_url','contact_email','contact_phone','tech_stack','value_proposition'];
+      const esc  = v => `"${(v||'').toString().replace(/"/g,'""')}"`;
+      const rows = state.leads.map(l => cols.map(c => esc(l[c])).join(','));
+      downloadBlob(new Blob([[cols.join(','), ...rows].join('\n')], { type:'text/csv' }),
+                   `leads_${new Date().toISOString().slice(0,10)}.csv`);
+      addLog(`📥 Exported ${state.leads.length} leads as CSV.`, 'success');
+    });
+
+    document.getElementById('export-json-btn').addEventListener('click', () => {
+      if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
+      downloadBlob(new Blob([JSON.stringify(state.leads, null, 2)], { type:'application/json' }),
+                   `leads_${new Date().toISOString().slice(0,10)}.json`);
+      addLog(`📥 Exported ${state.leads.length} leads as JSON.`, 'success');
+    });
+
+    // ── Wire up ───────────────────────────────────────────────────────────────
+    startBtn.addEventListener('click', runLeadGen);
+
+    deepResBtn.addEventListener('click', runDeepResearch);
+    closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+    selectAllCheck.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        state.leads.forEach(l => state.selectedIds.add(l.company_name));
+      } else {
+        state.selectedIds.clear();
+      }
+      renderTable();
+    });
+
+    leadsTbody.addEventListener('change', (e) => {
+      if (e.target.classList.contains('lead-checkbox')) {
+        const id = e.target.dataset.id;
+        if (e.target.checked) state.selectedIds.add(id);
+        else state.selectedIds.delete(id);
+        
+        selectAllCheck.checked = state.selectedIds.size === state.leads.length && state.leads.length > 0;
+        updateSelectedCount();
+      }
+    });
+
+    // Allow Enter key in inputs to trigger search
+    [industryInput, locationInput].forEach(el =>
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' && !state.running) runLeadGen(); })
+    );
+
+    // ── LinkedIn Session Sync Logic ───────────────────────────────────────────
+    const cookieInput = document.getElementById('cookie-input');
+    const saveCookieBtn = document.getElementById('save-cookie-btn');
+    const cookieStatus = document.getElementById('cookie-status');
+
+    async function checkCookieStatus() {
+      try {
+        const res = await fetch('/api/leads/linkedin_session/status');
+        const data = await res.json();
+        if (data.status === 'active') {
+          cookieStatus.textContent = 'Active';
+          cookieStatus.className = 'text-[9px] px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400 font-bold uppercase tracking-wider';
+        } else {
+          cookieStatus.textContent = 'Inactive';
+          cookieStatus.className = 'text-[9px] px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 font-bold uppercase tracking-wider';
+        }
+      } catch (err) {
+        console.error('Failed to check cookie status', err);
+      }
+    }
+
+    saveCookieBtn.addEventListener('click', async () => {
+      const cookieValue = cookieInput.value.trim();
+      if (!cookieValue) {
+        addLog('⚠️ Please enter a cookie value first.', 'error');
+        return;
+      }
+      
+      saveCookieBtn.disabled = true;
+      saveCookieBtn.textContent = 'Saving...';
+      
+      try {
+        const res = await fetch('/api/leads/linkedin_session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookie_value: cookieValue })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          cookieStatus.textContent = 'Active';
+          cookieStatus.className = 'text-[9px] px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400 font-bold uppercase tracking-wider';
+          cookieInput.value = '';
+          addLog('✅ LinkedIn session updated successfully! You can now run research.', 'success');
+        } else {
+          addLog(`❌ Failed to update session: ${data.detail || 'Unknown error'}`, 'error');
+        }
+      } catch (err) {
+        addLog(`❌ Failed to update session: ${err.message}`, 'error');
+      } finally {
+        saveCookieBtn.disabled = false;
+        saveCookieBtn.textContent = 'Save';
+      }
+    });
+
+    // Check on startup
+    checkCookieStatus();
+  </script>
+
+</body>
+</html>

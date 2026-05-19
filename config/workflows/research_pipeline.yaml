@@ -1,0 +1,36 @@
+workflow_id: research_pipeline
+version: "1.0"
+description: "Hybrid fixed + flexible workflow: agent research followed by fixed structuring step"
+start_at: research_agent
+nodes:
+  - node_id: research_agent
+    node_type: agent
+    config:
+      agent_id: research_assistant
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.research_text: text
+      outputs.research_steps: steps
+    transitions:
+      - to: structure_output
+        when: always
+
+  - node_id: structure_output
+    node_type: tool
+    config:
+      tool_name: json_extract
+      arguments:
+        schema: |
+          {
+            "summary": "string",
+            "key_points": ["string"],
+            "follow_up_questions": ["string"]
+          }
+    input_map:
+      text: outputs.research_text
+    output_map:
+      outputs.structured_report: data.json
+    transitions: []

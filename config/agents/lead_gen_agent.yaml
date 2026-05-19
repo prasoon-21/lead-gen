@@ -1,0 +1,39 @@
+agent_id: lead_gen_agent
+version: "1.0"
+description: "Flexible B2B lead generation agent that searches Google and scrapes websites to build structured lead lists."
+model_profile: large
+system_prompt_path: config/prompts/agents/lead_gen_agent.txt
+response_mode: json
+allowed_tools:
+  - web_search
+  - web_research
+  - linkedin_research
+  - http_request
+  - json_extract
+memory_window: 10
+max_steps: 25
+max_tool_calls: 20
+max_runtime_seconds: 300
+default_context:
+  domain: sales_intelligence
+  output_format: json
+output_schema:
+  type: object
+  properties:
+    leads:
+      type: array
+      items:
+        type: object
+        properties:
+          company_name: { type: string }
+          founder_name: { type: string }
+          contact_email: { type: string }
+          contact_phone: { type: string }
+          linkedin_url: { type: string }
+          location: { type: string }
+          value_proposition: { type: string }
+          company_website: { type: string }
+          company_size: { type: string }
+          industry: { type: string }
+        required: [company_name, company_website]
+  required: [leads]

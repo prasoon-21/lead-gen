@@ -1,0 +1,18 @@
+agent_id: email_writer_agent
+version: "1.0"
+description: >
+  Standard email writing agent. Writes professional, effective emails for any
+  business context. Industry-specific tone and context can be injected via the
+  context field in the API call (business, sender_name, recipient_name, tone).
+model_profile: large
+system_prompt_path: config/prompts/agents/email_writer_agent.txt
+response_mode: text
+allowed_tools:
+  - json_extract
+memory_window: 6
+max_steps: 3
+max_tool_calls: 2
+max_runtime_seconds: 30
+default_context:
+  tone: professional
+  language: English

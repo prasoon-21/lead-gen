@@ -4,7 +4,8 @@ import base64
 import re
 from typing import Dict, Any, Optional, List
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from core.extraction.json_repair import safe_json_loads
 from core.adapters.base import BaseLLMAdapter, LLMResponse
@@ -23,9 +24,8 @@ class GeminiAdapter(BaseLLMAdapter):
     ):
         super().__init__(api_key, model_name)
         self.embedding_model = embedding_model
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(model_name)
-        self._vision_model = genai.GenerativeModel(model_name)
+        self._client = genai.Client(api_key=api_key)
+        self._model_name = model_name
 
     def _extract_text(self, response) -> str:
         try:
@@ -68,31 +68,27 @@ class GeminiAdapter(BaseLLMAdapter):
         max_tokens: int = 8192
     ) -> LLMResponse:
         start_time = time.time()
-        
-        generation_config = genai.GenerationConfig(
+
+        config = genai_types.GenerateContentConfig(
             temperature=temperature,
-            max_output_tokens=max_tokens
+            max_output_tokens=max_tokens,
+            system_instruction=system_prompt or "",
         )
-        
-        contents = []
-        if system_prompt:
-            contents.append({"role": "user", "parts": [system_prompt]})
-            contents.append({"role": "model", "parts": ["Understood. I will follow these instructions."]})
-        contents.append({"role": "user", "parts": [prompt]})
-        
-        response = self._model.generate_content(
-            contents,
-            generation_config=generation_config
+
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=prompt,
+            config=config,
         )
-        
+
         latency_ms = (time.time() - start_time) * 1000
-        
+
         input_tokens = 0
         output_tokens = 0
         if hasattr(response, 'usage_metadata'):
-            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
-            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
-        
+            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+
         text = self._extract_text(response)
         return LLMResponse(
             text=text,
@@ -111,45 +107,41 @@ class GeminiAdapter(BaseLLMAdapter):
         temperature: float = 0.7
     ) -> LLMResponse:
         start_time = time.time()
-        
-        generation_config = genai.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=8192
-        )
-        
+
         parts = []
-        
         if system_prompt:
-            parts.append(system_prompt + "\n\n")
-        
-        parts.append(prompt)
-        
+            parts.append(genai_types.Part(text=system_prompt + "\n\n"))
+        parts.append(genai_types.Part(text=prompt))
+
         for img in images:
             base64_data = img.get("base64", "")
             if "," in base64_data:
                 base64_data = base64_data.split(",")[1]
-            
             mime_type = img.get("mimeType", "image/png")
             image_bytes = base64.b64decode(base64_data)
-            
-            parts.append({
-                "mime_type": mime_type,
-                "data": image_bytes
-            })
-        
-        response = self._vision_model.generate_content(
-            parts,
-            generation_config=generation_config
+            parts.append(genai_types.Part(
+                inline_data=genai_types.Blob(mime_type=mime_type, data=image_bytes)
+            ))
+
+        config = genai_types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=8192,
         )
-        
+
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=parts,
+            config=config,
+        )
+
         latency_ms = (time.time() - start_time) * 1000
-        
+
         input_tokens = 0
         output_tokens = 0
         if hasattr(response, 'usage_metadata'):
-            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
-            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
-        
+            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+
         text = self._extract_text(response)
         return LLMResponse(
             text=text,
@@ -222,9 +214,8 @@ class GeminiAdapter(BaseLLMAdapter):
             return {"error": str(e)}
     
     async def embed(self, text: str) -> List[float]:
-        result = genai.embed_content(
+        result = self._client.models.embed_content(
             model=self.embedding_model,
-            content=text,
-            task_type="retrieval_document"
+            contents=text,
         )
-        return result['embedding']
+        return result.embeddings[0].values

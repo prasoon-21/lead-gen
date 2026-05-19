@@ -5,7 +5,7 @@ fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
 # LLM providers
-google-generativeai>=0.4.0
+google-genai>=0.8.0
 
 # Vector database
 qdrant-client>=1.7.0
@@ -17,6 +17,10 @@ httpx>=0.27.0
 
 # Data validation
 pydantic>=2.5.0
+
+# Email verification utilities
+dnspython>=2.6.0
+email-validator>=2.1.0
 
 # Google Sheets (optional)
 gspread>=5.12.0

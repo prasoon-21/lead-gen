@@ -16,7 +16,6 @@ from api.routes import (
 )
 from core.adapters.router import build_adapter_from_env
 from core.retrieval.embeddings import EmbeddingService
-from core.retrieval.qdrant_client import QdrantRetriever
 from core.logging.tracker import TokenTracker
 from core.logging.runtime_logger import setup_runtime_logging
 from config.loader import ConfigLoader
@@ -51,6 +50,7 @@ async def lifespan(app: FastAPI):
 
     try:
         if embedding_service:
+            from core.retrieval.qdrant_client import QdrantRetriever  # noqa: lazy import
             state.retriever = QdrantRetriever(
                 url=qdrant_url,
                 api_key=qdrant_api_key,
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
             state.retriever = None
             print("Qdrant disabled (no embedding service available)")
     except Exception as e:
-        print(f"Qdrant connection failed: {e}")
+        print(f"Qdrant connection failed (may be expected on Vercel): {e}")
         state.retriever = None
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
             tasks_worksheet_name=os.getenv("TODO_WORKSHEET_NAME", "tasks"),
             audit_worksheet_name=os.getenv("TODO_AUDIT_WORKSHEET", "audit_log"),
         )
+        # LEADS_WORKSHEET_NAME is read inside TodoSheetStore via os.getenv automatically
     except Exception as exc:
         print(f"Todo store initialization failed: {exc}")
         state.todo_store = None

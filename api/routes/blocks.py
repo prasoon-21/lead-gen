@@ -321,31 +321,37 @@ async def transcribe_audio(
     # Fallback to Gemini
     if use_provider in ("auto", "gemini") and google_api_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=google_api_key)
-            
-            # Upload audio as inline data
+            from google import genai as _genai
+            from google.genai import types as _genai_types
             import base64
+
+            _client = _genai.Client(api_key=google_api_key)
             audio_base64 = base64.b64encode(file_bytes).decode("utf-8")
             mime_type = file.content_type or "audio/mpeg"
-            
-            gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-            
+
             transcribe_prompt = "Transcribe this audio file accurately. Return only the transcription text, no additional commentary."
             if language:
                 transcribe_prompt += f" The audio is in {language}."
             if prompt:
                 transcribe_prompt += f" Context: {prompt}"
-            
-            response = gemini_model.generate_content([
-                transcribe_prompt,
-                {"mime_type": mime_type, "data": base64.b64decode(audio_base64)}
-            ])
-            
+
+            response = _client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    transcribe_prompt,
+                    _genai_types.Part(
+                        inline_data=_genai_types.Blob(
+                            mime_type=mime_type,
+                            data=base64.b64decode(audio_base64)
+                        )
+                    )
+                ]
+            )
+
             text = response.text.strip() if response.text else ""
             if not text:
                 raise HTTPException(status_code=500, detail="Gemini returned empty transcription")
-            
+
             return TranscribeResponse(text=text, model="gemini-2.5-flash", language=language)
         except Exception as e:
             if use_provider == "gemini":

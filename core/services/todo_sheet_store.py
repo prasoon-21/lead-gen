@@ -51,6 +51,21 @@ class TodoSheetStore:
         "trace_id",
     ]
 
+    # Dedicated leads worksheet columns (order matters)
+    LEAD_HEADERS = [
+        "Company Name",
+        "Specialty",
+        "Contact Name",
+        "Email",
+        "Phone",
+        "Website",
+        "City",
+        "State",
+        "Zip Code",
+        "Status",
+        "Notes",
+    ]
+
     AUDIT_HEADERS = [
         "event_id",
         "timestamp",
@@ -82,6 +97,7 @@ class TodoSheetStore:
         self.folder_id = folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
         self.tasks_worksheet_name = tasks_worksheet_name or os.getenv("TODO_WORKSHEET_NAME", "tasks")
         self.audit_worksheet_name = audit_worksheet_name or os.getenv("TODO_AUDIT_WORKSHEET", "audit_log")
+        self.leads_worksheet_name = os.getenv("LEADS_WORKSHEET_NAME", "leads")
 
         self._creds = None
         self._gspread_client = None
@@ -89,8 +105,10 @@ class TodoSheetStore:
         self._spreadsheet = None
         self._tasks_ws = None
         self._audit_ws = None
+        self._leads_ws = None
         self._task_headers_current: List[str] = list(self.TASK_HEADERS)
         self._audit_headers_current: List[str] = list(self.AUDIT_HEADERS)
+        self._lead_headers_current: List[str] = list(self.LEAD_HEADERS)
 
     @staticmethod
     def _now() -> str:
@@ -254,20 +272,23 @@ class TodoSheetStore:
 
         self._tasks_ws = self._ensure_worksheet(self._spreadsheet, self.tasks_worksheet_name)
         self._audit_ws = self._ensure_worksheet(self._spreadsheet, self.audit_worksheet_name)
+        self._leads_ws = self._ensure_worksheet(self._spreadsheet, self.leads_worksheet_name)
 
         self._task_headers_current = self._ensure_headers(self._tasks_ws, self.TASK_HEADERS)
         self._audit_headers_current = self._ensure_headers(self._audit_ws, self.AUDIT_HEADERS)
+        self._lead_headers_current = self._ensure_headers(self._leads_ws, self.LEAD_HEADERS)
 
         return {
             "spreadsheet_id": sheet_id,
             "spreadsheet_name": self._spreadsheet.title,
             "tasks_worksheet": self.tasks_worksheet_name,
             "audit_worksheet": self.audit_worksheet_name,
+            "leads_worksheet": self.leads_worksheet_name,
             "task_headers": self._task_headers_current,
         }
 
     def _require_ready(self):
-        if self._tasks_ws is None or self._audit_ws is None:
+        if self._tasks_ws is None or self._audit_ws is None or self._leads_ws is None:
             self.ensure_store()
 
     def _find_task_row(self, task_id: str) -> Tuple[int, Dict[str, Any]]:
@@ -472,3 +493,50 @@ class TodoSheetStore:
             trace_id=trace_id,
             session_id=session_id,
         )
+
+    # ------------------------------------------------------------------
+    # Lead-specific helpers
+    # ------------------------------------------------------------------
+
+    def save_lead(self, lead: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Append a single lead row to the dedicated 'leads' worksheet.
+        Column order: Company Name, Specialty, Contact Name, Email, Phone,
+                      Website, City, State, Zip Code, Status, Notes.
+        Returns the dict that was written.
+        """
+        self._require_ready()
+        row_data = {
+            "Company Name": str(lead.get("company_name", "")).strip(),
+            "Specialty":    str(lead.get("specialty", "")).strip(),
+            "Contact Name": str(lead.get("contact_name", "") or lead.get("founder_name", "")).strip(),
+            "Email":        str(lead.get("email", "") or lead.get("contact_email", "")).strip(),
+            "Phone":        str(lead.get("phone", "") or lead.get("contact_phone", "")).strip(),
+            "Website":      str(lead.get("website", "") or lead.get("company_website", "")).strip(),
+            "City":         str(lead.get("city", "")).strip(),
+            "State":        str(lead.get("state", "")).strip(),
+            "Zip Code":     str(lead.get("zip_code", "")).strip(),
+            "Status":       str(lead.get("status", "New")).strip() or "New",
+            "Notes":        str(lead.get("notes", "") or lead.get("value_proposition", "")).strip(),
+        }
+        row = [row_data.get(h, "") for h in self._lead_headers_current]
+        self._leads_ws.append_row(row, value_input_option="USER_ENTERED")
+        return row_data
+
+    def list_leads(self) -> List[Dict[str, Any]]:
+        """Return all rows from the leads worksheet as a list of dicts."""
+        self._require_ready()
+        return self._leads_ws.get_all_records(default_blank="")
+
+    def get_lead_company_names(self) -> List[str]:
+        """Return existing company names from the leads sheet (for deduplication)."""
+        self._require_ready()
+        rows = self._leads_ws.get_all_values()
+        if not rows or len(rows) < 2:
+            return []
+        headers = rows[0]
+        try:
+            col_idx = headers.index("Company Name")
+        except ValueError:
+            return []
+        return [row[col_idx].strip() for row in rows[1:] if col_idx < len(row) and row[col_idx].strip()]

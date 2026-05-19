@@ -925,7 +925,7 @@
     function normalizeLead(raw) {
       const lead = {};
       const find = (keywords) => {
-        const key = Object.keys(raw).find(k => 
+        const key = Object.keys(raw).find(k =>
           keywords.some(kw => k.toLowerCase().replace(/_/g,' ').includes(kw))
         );
         return key ? raw[key] : null;
@@ -938,10 +938,34 @@
       lead.linkedin_url      = find(['linkedin', 'profile']);
       lead.contact_email     = find(['email', 'mail']) || '—';
       lead.contact_phone     = find(['phone', 'mobile', 'tel']) || '—';
-      lead.location          = find(['location', 'city', 'state', 'address']) || '—';
-      lead.industry          = find(['industry', 'type', 'specialty']) || 'Upfitter';
+      lead.industry          = find(['industry', 'type', 'specialty', 'sector']) || 'Upfitter';
+      lead.specialty         = lead.industry; // mirrors industry for sheet column
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
-      
+
+      // Location — try dedicated fields first, fall back to compound string
+      const rawCity  = find(['city'])  || '';
+      const rawState = find(['state']) || '';
+      const rawZip   = find(['zip', 'postal']) || '';
+      const rawLoc   = find(['location', 'address']) || '';
+
+      if (rawCity || rawState || rawZip) {
+        lead.city     = rawCity;
+        lead.state    = rawState;
+        lead.zip_code = rawZip;
+      } else if (rawLoc) {
+        // Try to split "City, ST 12345" or "City, State" heuristically
+        const parts = rawLoc.split(',').map(s => s.trim());
+        lead.city     = parts[0] || rawLoc;
+        lead.state    = parts[1] || '';
+        lead.zip_code = parts[2] || '';
+      } else {
+        lead.city = lead.state = lead.zip_code = '';
+      }
+      lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
+
+      lead.status = find(['status']) || 'New';
+      lead.notes  = find(['notes', 'comments', 'remarks']) || lead.value_proposition || '';
+
       return lead;
     }
 
@@ -956,10 +980,25 @@
 
     document.getElementById('export-csv-btn').addEventListener('click', () => {
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
-      const cols = ['company_name','company_website','company_size','founder_name','linkedin_url','contact_email','contact_phone','tech_stack','value_proposition'];
+      // Column order matches the Google Sheet: Company Name, Specialty, Contact Name,
+      // Email, Phone, Website, City, State, Zip Code, Status, Notes
+      const cols = [
+        { header: 'Company Name', key: l => l.company_name },
+        { header: 'Specialty',    key: l => l.specialty || l.industry },
+        { header: 'Contact Name', key: l => l.founder_name },
+        { header: 'Email',        key: l => l.contact_email },
+        { header: 'Phone',        key: l => l.contact_phone },
+        { header: 'Website',      key: l => l.company_website },
+        { header: 'City',         key: l => l.city },
+        { header: 'State',        key: l => l.state },
+        { header: 'Zip Code',     key: l => l.zip_code },
+        { header: 'Status',       key: l => l.status || 'New' },
+        { header: 'Notes',        key: l => l.notes || l.value_proposition },
+      ];
       const esc  = v => `"${(v||'').toString().replace(/"/g,'""')}"`;
-      const rows = state.leads.map(l => cols.map(c => esc(l[c])).join(','));
-      downloadBlob(new Blob([[cols.join(','), ...rows].join('\n')], { type:'text/csv' }),
+      const header = cols.map(c => c.header).join(',');
+      const rows = state.leads.map(l => cols.map(c => esc(c.key(l))).join(','));
+      downloadBlob(new Blob([[header, ...rows].join('\n')], { type:'text/csv' }),
                    `leads_${new Date().toISOString().slice(0,10)}.csv`);
       addLog(`📥 Exported ${state.leads.length} leads as CSV.`, 'success');
     });

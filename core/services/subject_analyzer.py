@@ -1,7 +1,8 @@
 from typing import Dict, Any, Optional, List
 import os
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from core.adapters.base import BaseLLMAdapter, LLMResponse
 
@@ -35,8 +36,8 @@ class SubjectAnalyzer:
         if self.adapter is None:
             api_key = os.getenv("GOOGLE_API_KEY")
             if api_key:
-                genai.configure(api_key=api_key)
-                self._lite_model = genai.GenerativeModel(self.LITE_MODEL)
+                self._lite_client = genai.Client(api_key=api_key)
+                self._lite_model_name = self.LITE_MODEL
     
     async def classify_subject(
         self,
@@ -57,9 +58,11 @@ Current: {current_subject or "N/A"}
         if self.adapter:
             response = await self.adapter.generate(prompt=prompt, temperature=0.1, max_tokens=32)
             text = response.text
-        elif self._lite_model:
-            config = genai.GenerationConfig(temperature=0.1, max_output_tokens=10)
-            response = self._lite_model.generate_content(prompt, generation_config=config)
+        elif hasattr(self, '_lite_client'):
+            config = genai_types.GenerateContentConfig(temperature=0.1, max_output_tokens=10)
+            response = self._lite_client.models.generate_content(
+                model=self._lite_model_name, contents=prompt, config=config
+            )
             text = response.text if response else "Mathematics"
         else:
             text = "Mathematics"

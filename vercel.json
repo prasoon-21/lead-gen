@@ -5,8 +5,14 @@
       "src": "api/main.py",
       "use": "@vercel/python",
       "config": {
-        "maxDuration": 60,
-        "includeFiles": ["core/**", "config/**", "workflows/**", "requirements.txt"]
+        "maxDuration": 300,
+        "includeFiles": [
+          "core/**",
+          "config/**",
+          "workflows/**",
+          "ui/**",
+          "requirements-vercel.txt"
+        ]
       }
     }
   ],

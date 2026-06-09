@@ -192,6 +192,18 @@
             <input id="location-input" type="text" class="field"
               placeholder="e.g. London, San Francisco, Mumbai" />
           </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Target Leads</label>
+              <input id="lead-count-input" type="number" min="1" max="100" value="15" class="field"
+                placeholder="15" />
+            </div>
+            <div>
+              <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Target Role</label>
+              <input id="role-input" type="text" class="field"
+                placeholder="e.g. Founder, CEO, Marketing Head" />
+            </div>
+          </div>
 
           <!-- Progress bar (hidden until run) -->
           <div id="progress-wrap" class="hidden pt-1 px-1">
@@ -211,7 +223,7 @@
       </section>
 
       <!-- Stat cards -->
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-lv-400">
           <div class="text-[10px] text-lv-400 uppercase font-bold tracking-wider">Leads Found</div>
           <div id="leads-count" class="text-2xl font-bold mt-0.5">0</div>
@@ -219,6 +231,14 @@
         <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-sky-400">
           <div class="text-[10px] text-sky-400 uppercase font-bold tracking-wider">Time Elapsed</div>
           <div id="timer" class="text-2xl font-bold mt-0.5">0s</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-green-400">
+          <div class="text-[10px] text-green-400 uppercase font-bold tracking-wider">Usable Leads</div>
+          <div id="usable-count" class="text-2xl font-bold mt-0.5">0</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-amber-400">
+          <div class="text-[10px] text-amber-400 uppercase font-bold tracking-wider">Verified Leads</div>
+          <div id="verified-count" class="text-2xl font-bold mt-0.5">0</div>
         </div>
       </div>
 
@@ -296,8 +316,8 @@
                   <input type="checkbox" id="select-all-checkbox" class="rounded border-lv-500/30 bg-lv-900/50 text-lv-500 focus:ring-lv-500/20">
                 </th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Company</th>
-                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Founder / Contact</th>
-                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Legitimacy Check</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Person / Role</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Contact / Quality</th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Location</th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Value Prop</th>
               </tr>
@@ -309,7 +329,7 @@
                     <svg class="w-14 h-14 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
-                    <p class="text-sm">Enter an industry and location, then click <strong class="text-lv-500">Generate Leads</strong>.</p>
+                    <p id="empty-state-message" class="text-sm">Enter an industry and location, then click <strong class="text-lv-500">Generate Leads</strong>.</p>
                   </div>
                 </td>
               </tr>
@@ -373,10 +393,14 @@
     const btnText        = document.getElementById('btn-text');
     const industryInput  = document.getElementById('industry-input');
     const locationInput  = document.getElementById('location-input');
+    const leadCountInput = document.getElementById('lead-count-input');
+    const roleInput      = document.getElementById('role-input');
     const logContainer   = document.getElementById('log-container');
     const logLive        = document.getElementById('log-live');
     const leadsTbody     = document.getElementById('leads-tbody');
     const leadsCount     = document.getElementById('leads-count');
+    const usableCount    = document.getElementById('usable-count');
+    const verifiedCount  = document.getElementById('verified-count');
     const timerDisplay   = document.getElementById('timer');
     const progressWrap   = document.getElementById('progress-wrap');
     const progressBar    = document.getElementById('progress-bar');
@@ -391,6 +415,8 @@
     const btnModeVelit   = document.getElementById('btn-mode-velit');
     const modeBadge      = document.getElementById('mode-badge');
     const industryWrap   = document.getElementById('industry-wrap');
+
+    btnText.textContent = 'Generate Leads';
 
     // ── Mode Switching ────────────────────────────────────────────────────────
     function setMode(mode) {
@@ -414,6 +440,46 @@
 
     btnModeGeneric.addEventListener('click', () => setMode('generic'));
     btnModeVelit.addEventListener('click', () => setMode('velit'));
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function summarizeApiIssue(message) {
+      const text = String(message || '');
+      if (/429|resource_exhausted|quota/i.test(text)) {
+        return 'Gemini quota is exhausted for the current key. Use another active key or wait for quota reset.';
+      }
+      if (/503|unavailable|high demand|experiencing high demand/i.test(text)) {
+        return 'Gemini is temporarily under heavy load, please retry in a while.';
+      }
+      if (/TAVILY_API_KEY|tavily/i.test(text)) {
+        return 'Web search is not configured correctly. Check the Tavily key.';
+      }
+      return text || 'Something went wrong while talking to the backend.';
+    }
+
+    const leadgenDebug = {
+      enabled: true,
+      log(label, payload) {
+        if (!this.enabled) return;
+        console.log(`[leadgen] ${label}`, payload);
+      },
+      warn(label, payload) {
+        if (!this.enabled) return;
+        console.warn(`[leadgen] ${label}`, payload);
+      },
+      error(label, payload) {
+        if (!this.enabled) return;
+        console.error(`[leadgen] ${label}`, payload);
+      }
+    };
+    window.leadgenDebug = leadgenDebug;
 
     // ── Logging ──────────────────────────────────────────────────────────────
     function addLog(message, type = 'info') {
@@ -523,7 +589,7 @@
           </td>
           <td class="px-5 py-4">
             <div class="text-[11px] text-lv-200 font-medium">${lead.location || '—'}</div>
-            <div class="text-[9px] text-lv-500 uppercase font-bold mt-0.5">${lead.industry || 'Upfitter'}</div>
+            <div class="text-[9px] text-lv-500 uppercase font-bold mt-0.5">${lead.industry || 'General'}</div>
           </td>
           <td class="px-5 py-4 max-w-[220px]">
             <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-3"
@@ -938,7 +1004,7 @@
       lead.linkedin_url      = find(['linkedin', 'profile']);
       lead.contact_email     = find(['email', 'mail']) || '—';
       lead.contact_phone     = find(['phone', 'mobile', 'tel']) || '—';
-      lead.industry          = find(['industry', 'type', 'specialty', 'sector']) || 'Upfitter';
+      lead.industry          = find(['industry', 'type', 'specialty', 'sector']) || (state.mode === 'velit' ? 'Upfitter' : (industryInput.value.trim() || 'General'));
       lead.specialty         = lead.industry; // mirrors industry for sheet column
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
 
@@ -966,6 +1032,647 @@
       lead.status = find(['status']) || 'New';
       lead.notes  = find(['notes', 'comments', 'remarks']) || lead.value_proposition || '';
 
+      return lead;
+    }
+
+    window.researchFounder = async (company, name, linkedinUrl) => {
+      addLog(`Targeting LinkedIn profile for <strong>${name}</strong> (${company})...`, 'info');
+      leadgenDebug.log('researchFounder:start', { company, name, linkedinUrl });
+      try {
+        const requestBody = {
+          agent_id: 'lead_gen_agent',
+          message: `Use the linkedin_research tool on this profile: ${linkedinUrl}. Find the personal contact email and phone number for ${name} at ${company}. Return ONLY a JSON object with contact_email and contact_phone.`,
+          session_id: 'LR_' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+          context: { linkedin_url: linkedinUrl, founder_name: name, company_name: company }
+        };
+        leadgenDebug.log('researchFounder:request_body', requestBody);
+        const res = await fetch('/api/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        const rawText = await res.text();
+        leadgenDebug.log('researchFounder:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 500) });
+        let data = {};
+        try { data = JSON.parse(rawText); } catch (parseError) {
+          leadgenDebug.warn('researchFounder:parse_failed', { message: parseError.message, raw_preview: rawText.slice(0, 1000) });
+        }
+        leadgenDebug.log('researchFounder:response_body', data);
+        const json = data.json || {};
+
+        const lead = state.leads.find(l => l.company_name === company);
+        if (!lead) {
+          leadgenDebug.warn('researchFounder:lead_not_found_in_state', { company, name });
+          return;
+        }
+
+        if (json.contact_email || json.contact_phone) {
+          if (json.contact_email) lead.contact_email = json.contact_email;
+          if (json.contact_phone) lead.contact_phone = json.contact_phone;
+          renderTable();
+          addLog(`LinkedIn research complete for ${name}.`, 'success');
+          leadgenDebug.log('researchFounder:lead_updated', lead);
+        } else if (data.success && data.text) {
+          addLog(`LinkedIn research complete for ${name}: ${data.text}`, 'info');
+          leadgenDebug.warn('researchFounder:no_public_contact', { company, name, data });
+        } else {
+          const errorMsg = data.detail || data.text || 'Could not retrieve contact information from LinkedIn. Make sure your session is active.';
+          addLog(`LinkedIn research for ${name}: ${errorMsg}`, 'error');
+          leadgenDebug.warn('researchFounder:missing_contact', { company, name, errorMsg, data });
+        }
+      } catch (err) {
+        leadgenDebug.error('researchFounder:exception', { company, name, linkedinUrl, message: err.message, error: String(err) });
+        addLog(`LinkedIn research failed: ${err.message}`, 'error');
+      }
+    };
+
+    async function verifyLead(lead) {
+      lead.verifying = true;
+      renderTable();
+      leadgenDebug.log('verifyLead:start', { company_name: lead.company_name, email: lead.contact_email, lead_snapshot: lead });
+      try {
+        const requestBody = {
+          email: lead.contact_email,
+          lead: {
+            company_name: lead.company_name,
+            company_website: lead.company_website,
+            contact_person_name: lead.contact_person_name || lead.founder_name,
+            contact_person_title: lead.contact_person_title,
+            linkedin_url: lead.linkedin_url,
+            contact_phone: lead.contact_phone,
+            contact_page: lead.contact_page,
+            source: lead.source
+          }
+        };
+        leadgenDebug.log('verifyLead:request_body', requestBody);
+        const res = await fetch('/api/leads/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        const rawText = await res.text();
+        leadgenDebug.log('verifyLead:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 500) });
+        const data = JSON.parse(rawText);
+        leadgenDebug.log('verifyLead:response_body', data);
+        if (!res.ok) throw new Error(data.detail || 'Verification failed');
+
+        lead.verification_status = data.verification?.status || lead.verification_status;
+        lead.verification_message = data.verification?.message || '';
+        if (data.lead_quality) {
+          lead.quality_score = data.lead_quality.quality_score ?? lead.quality_score;
+          lead.confidence = data.lead_quality.confidence || lead.confidence;
+          lead.quality_status = data.lead_quality.quality_status || lead.quality_status;
+          lead.usable = data.lead_quality.usable ?? lead.usable;
+          lead.rejected = data.lead_quality.rejected ?? lead.rejected;
+          lead.quality_notes = data.lead_quality.quality_notes || lead.quality_notes;
+          lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
+          lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
+        }
+        leadgenDebug.log('verifyLead:lead_updated', lead);
+      } catch (err) {
+        leadgenDebug.error('verifyLead:exception', {
+          company_name: lead.company_name,
+          email: lead.contact_email,
+          message: err.message,
+          error: String(err)
+        });
+        addLog(`Verification failed for <strong>${escapeHtml(lead.company_name)}</strong>: ${escapeHtml(summarizeApiIssue(err.message))}`, 'error');
+      } finally {
+        lead.verifying = false;
+        renderTable();
+      }
+    }
+
+    async function autoSaveToSheets(leads) {
+      if (!leads || !leads.length) return;
+      leadgenDebug.log('autoSaveToSheets:skipped', { count: leads.length, mode: state.mode });
+      addLog('Webpage-only mode is active, so automatic Sheets export is skipped for this run.', 'info');
+    }
+
+    async function runLeadGen() {
+      const industry = industryInput.value.trim();
+      const location = locationInput.value.trim();
+      const targetLeadCount = Math.max(1, Math.min(100, Number(leadCountInput.value || 15)));
+      const targetRole = roleInput.value.trim();
+      leadgenDebug.log('runLeadGen:start', { mode: state.mode, industry, location, targetLeadCount, targetRole });
+
+      if (state.mode === 'generic' && !industry) {
+        leadgenDebug.warn('runLeadGen:missing_industry', { mode: state.mode });
+        addLog('Please fill in the Industry field.', 'error');
+        return;
+      }
+      if (!location) {
+        leadgenDebug.warn('runLeadGen:missing_location', {});
+        addLog('Please fill in the Location field.', 'error');
+        return;
+      }
+
+      const emptyStateMessage = document.getElementById('empty-state-message');
+      const sessionId = 'LGEN_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      state.leads = [];
+      state.selectedIds.clear();
+      timerDisplay.textContent = '0s';
+      if (emptyStateMessage) {
+        emptyStateMessage.innerHTML = 'Searching for companies, people, and contact paths...';
+      }
+      renderTable();
+      setBusy(true);
+      startTimer();
+      startProgress();
+
+      const scopeLabel = state.mode === 'velit'
+        ? `Upfitters in <strong>${escapeHtml(location)}</strong> for VelitCamping`
+        : `<strong>${escapeHtml(industry)}</strong> companies in <strong>${escapeHtml(location)}</strong>`;
+      addLog(`Starting lead search for ${scopeLabel} with a target of <strong>${targetLeadCount}</strong>${targetRole ? ` and a focus on <strong>${escapeHtml(targetRole)}</strong>` : ''}.`, 'info');
+
+      try {
+        addLog('Webpage-only mode is active, so duplicate checks against Sheets export history are skipped.', 'info');
+
+        const targetRoleInstruction = targetRole
+          ? `Prioritize people with titles similar to ${targetRole}.`
+          : 'Prioritize founders, owners, CEOs, operations leads, or other decision-makers.';
+        const fallbackInstruction = 'If direct email is unavailable, still keep the lead if you find LinkedIn, company phone, or a usable contact page. Search nearby cities or adjacent markets if the main location is thin.';
+        const discoveryInstruction = state.mode === 'velit'
+          ? `Find premium van upfitters and RV builders around ${location}. For each company, identify the best decision-maker and gather the strongest available contact path.`
+          : `Find at least ${targetLeadCount} usable B2B leads in the ${industry} space around ${location}. Search multiple query variations, then enrich each good company with a person and contact path.`;
+
+        const requestBody = {
+          agent_id: 'lead_gen_agent',
+          message: `${discoveryInstruction} ${targetRoleInstruction} ${fallbackInstruction} Return results in the required JSON schema only.`,
+          session_id: sessionId,
+          context: {
+            industry,
+            location,
+            output_mode: 'json_list',
+            mode: state.mode,
+            target_lead_count: targetLeadCount,
+            target_role: targetRole,
+            search_expansion_enabled: true,
+            allow_fallback_contacts: true
+          }
+        };
+        leadgenDebug.log('runLeadGen:request_body', requestBody);
+
+        const res = await fetch('/api/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        const rawText = await res.text();
+        leadgenDebug.log('runLeadGen:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 1000) });
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+          leadgenDebug.log('runLeadGen:parsed_response', data);
+        } catch (parseError) {
+          leadgenDebug.warn('runLeadGen:parse_failed', { message: parseError.message, raw_preview: rawText.slice(0, 1000) });
+        }
+        if (!res.ok) throw new Error(data.detail || rawText.substring(0, 240));
+
+        if (data.steps && Array.isArray(data.steps)) {
+          leadgenDebug.log('runLeadGen:steps', data.steps);
+          data.steps.forEach(step => {
+            const toolName = step.tool || step.tool_name || step.type;
+            if (toolName) {
+              const detail = step.input?.query || step.arguments?.query || step.input?.company_name || step.arguments?.company_name || step.input?.website_url || '';
+              addLog(`Agent used <strong>${escapeHtml(toolName)}</strong>${detail ? ` on <strong>${escapeHtml(detail)}</strong>` : ''}.`, 'info');
+            }
+          });
+        }
+
+        let leads = [];
+        leadgenDebug.log('runLeadGen:json_payload_keys', Object.keys(data || {}));
+        if (Array.isArray(data.json?.leads)) {
+          leads = data.json.leads;
+          leadgenDebug.log('runLeadGen:leads_from_json_wrapper', { count: leads.length, preview: leads.slice(0, 3) });
+        } else if (Array.isArray(data.json)) {
+          leads = data.json;
+          leadgenDebug.log('runLeadGen:leads_from_json_array', { count: leads.length, preview: leads.slice(0, 3) });
+        }
+        if (!leads.length) {
+          leadgenDebug.warn('runLeadGen:no_leads_in_json', {
+            json_keys: Object.keys(data || {}),
+            metadata: data.metadata,
+            raw_preview: rawText.slice(0, 1000)
+          });
+          leads = extractLeadsFromText(rawText);
+          leadgenDebug.log('runLeadGen:leads_from_text', { count: leads.length, preview: leads.slice(0, 3) });
+        }
+
+        state.leads = leads
+          .filter(lead => lead && typeof lead === 'object' && (lead.company_name || lead.company || lead.name))
+          .map(normalizeLead)
+          .filter(lead => lead.company_name && lead.company_name !== 'â€”')
+          .sort((a, b) => Number(b.quality_score || 0) - Number(a.quality_score || 0));
+        leadgenDebug.log('runLeadGen:normalized_leads', { count: state.leads.length, preview: state.leads.slice(0, 5) });
+        leadgenDebug.log('runLeadGen:normalized_leads', { count: state.leads.length, preview: state.leads.slice(0, 5) });
+
+        renderTable();
+
+        if (!state.leads.length) {
+          if (emptyStateMessage) {
+            emptyStateMessage.innerHTML = 'No leads were returned. Try a tighter niche, nearby cities, or a different target role.';
+          }
+          leadgenDebug.warn('runLeadGen:empty_after_normalization', { sessionId, raw_preview: rawText.slice(0, 1000) });
+          addLog('Agent returned no leads. Try a tighter niche, nearby cities, or a different target role.', 'error');
+          return;
+        }
+
+        const usableLeads = state.leads.filter(lead => lead.usable !== false && !lead.rejected).length;
+        leadgenDebug.log('runLeadGen:success_summary', { total: state.leads.length, usable: usableLeads, targetLeadCount });
+        addLog(`Found <strong>${state.leads.length}</strong> total leads with <strong>${usableLeads}</strong> usable leads.`, usableLeads > 0 ? 'success' : 'info');
+        if (usableLeads < targetLeadCount) {
+          addLog(`Run finished below the target of ${targetLeadCount}. You may want a broader location or another active Gemini key for a second pass.`, 'info');
+        } else {
+          addLog(`Target achieved: collected at least ${targetLeadCount} usable leads for this run.`, 'success');
+        }
+
+        await autoSaveToSheets(state.leads);
+      } catch (err) {
+        const friendly = summarizeApiIssue(err.message);
+        leadgenDebug.error('runLeadGen:exception', {
+          mode: state.mode,
+          industry,
+          location,
+          targetLeadCount,
+          targetRole,
+          message: err.message,
+          friendly,
+          error: String(err)
+        });
+        if (emptyStateMessage) {
+          emptyStateMessage.textContent = friendly;
+        }
+        addLog(`Lead generation failed: ${escapeHtml(friendly)}`, 'error');
+      } finally {
+        leadgenDebug.log('runLeadGen:finally', { final_lead_count: state.leads.length, running: state.running, sessionId });
+        setBusy(false);
+        stopTimer();
+        finishProgress();
+      }
+    }
+
+    function renderTable() {
+      const emptyState = document.getElementById('empty-state');
+      const emptyStateMessage = document.getElementById('empty-state-message');
+      emptyState.classList.toggle('hidden', state.leads.length > 0);
+      [...leadsTbody.querySelectorAll('tr:not(#empty-state)')].forEach(row => row.remove());
+
+      if (!state.leads.length && !state.running && emptyStateMessage) {
+        emptyStateMessage.innerHTML = 'Enter an industry and location, then click <strong class="text-lv-500">Generate Leads</strong>.';
+      }
+
+      state.leads.forEach((lead, index) => {
+        const row = document.createElement('tr');
+        row.className = 'lead-row';
+
+        const personName = lead.contact_person_name || lead.founder_name || '—';
+        const personTitle = lead.contact_person_title || 'Role not found';
+        const email = lead.contact_email || '—';
+        const phone = lead.contact_phone || '—';
+        const linkedin = lead.linkedin_url || '';
+        const contactPage = lead.contact_page || '';
+        const source = lead.source || 'web';
+        const confidence = String(lead.confidence || 'low').toLowerCase();
+        const qualityScore = Number(lead.quality_score || 0);
+        const qualityStatus = lead.quality_status || 'unreviewed';
+        const verificationStatus = lead.verification_status || lead.email_status || 'not verified';
+        const qualityNotes = Array.isArray(lead.quality_notes) ? lead.quality_notes.join(' | ') : (lead.quality_notes || '');
+
+        const confidenceTone = confidence === 'high'
+          ? 'text-green-300 bg-green-500/10 border-green-500/20'
+          : confidence === 'medium'
+            ? 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+            : 'text-lv-300 bg-lv-500/10 border-lv-500/20';
+
+        const verificationTone = /valid|verified/i.test(verificationStatus)
+          ? 'text-green-400'
+          : /risk|catch|unknown/i.test(verificationStatus)
+            ? 'text-amber-400'
+            : /invalid|fail/i.test(verificationStatus)
+              ? 'text-red-400'
+              : 'text-lv-500';
+
+        row.innerHTML = `
+          <td class="px-5 py-4 align-top">
+            <input type="checkbox" class="lead-checkbox rounded border-lv-500/30 bg-lv-900/50 text-lv-500 focus:ring-lv-500/20"
+              ${state.selectedIds.has(lead.company_name) ? 'checked' : ''} data-id="${escapeHtml(lead.company_name)}">
+          </td>
+          <td class="px-5 py-4 align-top">
+            <div class="font-bold text-white text-sm leading-tight">${escapeHtml(lead.company_name || '—')}</div>
+            ${lead.company_website
+              ? `<a href="${escapeHtml(lead.company_website)}" target="_blank" rel="noopener" class="text-[10px] text-lv-400 hover:text-lv-200 transition-colors truncate max-w-[220px] block mt-1">${escapeHtml(lead.company_website.replace(/^https?:\/\//, ''))}</a>`
+              : `<div class="text-[10px] text-lv-600 mt-1">Website not found</div>`}
+            <div class="text-[9px] text-lv-500 uppercase font-bold mt-2">${escapeHtml(lead.industry || 'General')}</div>
+          </td>
+          <td class="px-5 py-4 align-top">
+            <div class="text-sm text-lv-100 font-medium">${escapeHtml(personName)}</div>
+            <div class="text-[11px] text-lv-400 mt-1">${escapeHtml(personTitle)}</div>
+            <div class="flex flex-wrap gap-2 mt-2">
+              ${linkedin ? `<a href="${escapeHtml(linkedin)}" target="_blank" rel="noopener" class="text-[10px] text-sky-300 hover:text-sky-200 underline">LinkedIn</a>` : ''}
+              ${contactPage ? `<a href="${escapeHtml(contactPage)}" target="_blank" rel="noopener" class="text-[10px] text-lv-300 hover:text-lv-200 underline">Contact Page</a>` : ''}
+            </div>
+          </td>
+          <td class="px-5 py-4 align-top">
+            <div class="text-[11px] text-lv-200">${escapeHtml(email)}</div>
+            <div class="text-[11px] text-lv-400 mt-1">${escapeHtml(phone)}</div>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <span class="px-2 py-1 rounded-md border text-[9px] uppercase font-bold tracking-wider ${confidenceTone}">${escapeHtml(confidence)}</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider ${verificationTone}">${escapeHtml(verificationStatus)}</span>
+            </div>
+            <div class="text-[10px] text-lv-500 mt-2">Score ${qualityScore || 0} • ${escapeHtml(qualityStatus)}</div>
+            <div class="text-[10px] text-lv-600 mt-1">${escapeHtml(source)}</div>
+            ${qualityNotes ? `<div class="text-[9px] text-lv-600 mt-1 max-w-[220px]">${escapeHtml(qualityNotes)}</div>` : ''}
+            ${lead.verifying ? `<div class="text-[10px] text-lv-500 mt-2">Checking email...</div>` : ''}
+            ${(!lead.verification_status && !lead.verifying && lead.contact_email && lead.contact_email !== '—')
+              ? `<button onclick="window.verifyLeadByIndex(${index})" class="mt-2 px-2 py-1 rounded-md bg-lv-500/10 border border-lv-500/30 text-[9px] font-bold text-lv-300 hover:bg-lv-500/20 transition-all uppercase">Verify</button>`
+              : ''}
+          </td>
+          <td class="px-5 py-4 align-top">
+            <div class="text-[11px] text-lv-200 font-medium">${escapeHtml(lead.location || '—')}</div>
+            <div class="text-[9px] text-lv-500 uppercase font-bold mt-1">${escapeHtml(lead.city || '')} ${escapeHtml(lead.state || '')}</div>
+          </td>
+          <td class="px-5 py-4 align-top max-w-[260px]">
+            <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-4" title="${escapeHtml(lead.value_proposition || '')}">${escapeHtml(lead.value_proposition || '—')}</p>
+          </td>
+        `;
+        leadsTbody.appendChild(row);
+      });
+
+      leadsCount.textContent = state.leads.length;
+      usableCount.textContent = state.leads.filter(lead => lead.usable !== false && !lead.rejected).length;
+      verifiedCount.textContent = state.leads.filter(lead => /valid|verified/i.test(lead.verification_status || lead.email_status || '')).length;
+      updateSelectedCount();
+    }
+
+    async function verifyLead(lead) {
+      lead.verifying = true;
+      renderTable();
+      leadgenDebug.log('verifyLead:start', { company_name: lead.company_name, email: lead.contact_email, lead_snapshot: lead });
+      try {
+        const requestBody = {
+          email: lead.contact_email,
+          lead: {
+            company_name: lead.company_name,
+            company_website: lead.company_website,
+            contact_person_name: lead.contact_person_name || lead.founder_name,
+            contact_person_title: lead.contact_person_title,
+            linkedin_url: lead.linkedin_url,
+            contact_phone: lead.contact_phone,
+            contact_page: lead.contact_page,
+            source: lead.source
+          }
+        };
+        leadgenDebug.log('verifyLead:request_body', requestBody);
+        const res = await fetch('/api/leads/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        const rawText = await res.text();
+        leadgenDebug.log('verifyLead:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 500) });
+        const data = JSON.parse(rawText);
+        leadgenDebug.log('verifyLead:response_body', data);
+        if (!res.ok) throw new Error(data.detail || 'Verification failed');
+
+        lead.verification_status = data.verification?.status || lead.verification_status;
+        lead.verification_message = data.verification?.message || '';
+        if (data.lead_quality) {
+          lead.quality_score = data.lead_quality.quality_score ?? lead.quality_score;
+          lead.confidence = data.lead_quality.confidence || lead.confidence;
+          lead.quality_status = data.lead_quality.quality_status || lead.quality_status;
+          lead.usable = data.lead_quality.usable ?? lead.usable;
+          lead.rejected = data.lead_quality.rejected ?? lead.rejected;
+          lead.quality_notes = data.lead_quality.quality_notes || lead.quality_notes;
+          lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
+          lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
+        }
+      } catch (err) {
+        leadgenDebug.error('verifyLead:exception', { company_name: lead.company_name, email: lead.contact_email, message: err.message, error: String(err) });
+        addLog(`Verification failed for <strong>${escapeHtml(lead.company_name)}</strong>: ${escapeHtml(summarizeApiIssue(err.message))}`, 'error');
+      } finally {
+        lead.verifying = false;
+        renderTable();
+      }
+    }
+
+    async function autoSaveToSheets(leads) {
+      if (!leads || !leads.length) return;
+      leadgenDebug.log('autoSaveToSheets:skipped', { count: leads.length, mode: state.mode });
+      addLog('Webpage-only mode is active, so automatic Sheets export is skipped for this run.', 'info');
+    }
+
+    async function runLeadGen() {
+      const industry = industryInput.value.trim();
+      const location = locationInput.value.trim();
+      const targetLeadCount = Math.max(1, Math.min(100, Number(leadCountInput.value || 15)));
+      const targetRole = roleInput.value.trim();
+      leadgenDebug.log('runLeadGen:start', { mode: state.mode, industry, location, targetLeadCount, targetRole });
+
+      if (state.mode === 'generic' && !industry) {
+        leadgenDebug.warn('runLeadGen:missing_industry', { mode: state.mode });
+        addLog('Please fill in the Industry field.', 'error');
+        return;
+      }
+      if (!location) {
+        leadgenDebug.warn('runLeadGen:missing_location', {});
+        addLog('Please fill in the Location field.', 'error');
+        return;
+      }
+
+      const emptyStateMessage = document.getElementById('empty-state-message');
+      const sessionId = 'LGEN_' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      state.leads = [];
+      state.selectedIds.clear();
+      timerDisplay.textContent = '0s';
+      if (emptyStateMessage) {
+        emptyStateMessage.innerHTML = 'Searching for companies, people, and contact paths...';
+      }
+      renderTable();
+      setBusy(true);
+      startTimer();
+      startProgress();
+
+      const scopeLabel = state.mode === 'velit'
+        ? `Upfitters in <strong>${escapeHtml(location)}</strong> for VelitCamping`
+        : `<strong>${escapeHtml(industry)}</strong> companies in <strong>${escapeHtml(location)}</strong>`;
+      addLog(`Starting lead search for ${scopeLabel} with a target of <strong>${targetLeadCount}</strong>${targetRole ? ` and a focus on <strong>${escapeHtml(targetRole)}</strong>` : ''}.`, 'info');
+
+      try {
+        const existingCompanies = [];
+        leadgenDebug.log('runLeadGen:existing_companies_skipped', { mode: state.mode, existingCompaniesCount: existingCompanies.length });
+        addLog('Webpage-only mode is active, so duplicate checks against Sheets export history are skipped.', 'info');
+
+        const dedupeInstruction = existingCompanies.length
+          ? `Avoid these existing companies when possible: ${existingCompanies.slice(0, 60).join(', ')}.`
+          : '';
+        const targetRoleInstruction = targetRole
+          ? `Prioritize people with titles similar to ${targetRole}.`
+          : 'Prioritize founders, owners, CEOs, operations leads, or other decision-makers.';
+        const fallbackInstruction = 'If direct email is unavailable, still keep the lead if you find LinkedIn, company phone, or a usable contact page. Search nearby cities or adjacent markets if the main location is thin.';
+        const discoveryInstruction = state.mode === 'velit'
+          ? `Find premium van upfitters and RV builders around ${location}. For each company, identify the best decision-maker and gather the strongest available contact path.`
+          : `Find at least ${targetLeadCount} usable B2B leads in the ${industry} space around ${location}. Search multiple query variations, then enrich each good company with a person and contact path.`;
+
+        const requestBody = {
+          agent_id: 'lead_gen_agent',
+          message: `${discoveryInstruction} ${targetRoleInstruction} ${fallbackInstruction} ${dedupeInstruction} Return results in the required JSON schema only.`,
+          session_id: sessionId,
+          context: {
+            industry,
+            location,
+            output_mode: 'json_list',
+            mode: state.mode,
+            target_lead_count: targetLeadCount,
+            target_role: targetRole,
+            search_expansion_enabled: true,
+            allow_fallback_contacts: true
+          }
+        };
+        leadgenDebug.log('runLeadGen:request_body', requestBody);
+        const res = await fetch('/api/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        const rawText = await res.text();
+        leadgenDebug.log('runLeadGen:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 1000) });
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+          leadgenDebug.log('runLeadGen:parsed_response', data);
+        } catch (parseError) {
+          leadgenDebug.warn('runLeadGen:parse_failed', { message: parseError.message, raw_preview: rawText.slice(0, 1000) });
+        }
+        if (!res.ok) throw new Error(data.detail || rawText.substring(0, 240));
+
+        if (data.steps && Array.isArray(data.steps)) {
+          leadgenDebug.log('runLeadGen:steps', data.steps);
+          data.steps.forEach(step => {
+            const toolName = step.tool || step.tool_name || step.type;
+            if (toolName) {
+              const detail = step.input?.query || step.arguments?.query || step.input?.company_name || step.arguments?.company_name || step.input?.website_url || '';
+              addLog(`Agent used <strong>${escapeHtml(toolName)}</strong>${detail ? ` on <strong>${escapeHtml(detail)}</strong>` : ''}.`, 'info');
+            }
+          });
+        }
+
+        let leads = [];
+        if (Array.isArray(data.json?.leads)) leads = data.json.leads;
+        else if (Array.isArray(data.json)) leads = data.json;
+        leadgenDebug.log('runLeadGen:leads_after_json_pick', { count: leads.length, preview: leads.slice(0, 3) });
+        if (!leads.length) leads = extractLeadsFromText(rawText);
+        leadgenDebug.log('runLeadGen:leads_after_text_extract', { count: leads.length, preview: leads.slice(0, 3) });
+
+        state.leads = leads
+          .filter(lead => lead && typeof lead === 'object' && (lead.company_name || lead.company || lead.name))
+          .map(normalizeLead)
+          .filter(lead => lead.company_name && lead.company_name !== '—')
+          .sort((a, b) => Number(b.quality_score || 0) - Number(a.quality_score || 0));
+
+        renderTable();
+
+        if (!state.leads.length) {
+          if (emptyStateMessage) {
+            emptyStateMessage.innerHTML = 'No leads were returned. Try a tighter niche, nearby cities, or a different target role.';
+          }
+          leadgenDebug.warn('runLeadGen:empty_after_normalization', { sessionId, raw_preview: rawText.slice(0, 1000) });
+          addLog('Agent returned no leads. Try a tighter niche, nearby cities, or a different target role.', 'error');
+          return;
+        }
+
+        const usableLeads = state.leads.filter(lead => lead.usable !== false && !lead.rejected).length;
+        leadgenDebug.log('runLeadGen:success_summary', { total: state.leads.length, usable: usableLeads, targetLeadCount });
+        addLog(`Found <strong>${state.leads.length}</strong> total leads with <strong>${usableLeads}</strong> usable leads.`, usableLeads > 0 ? 'success' : 'info');
+        if (usableLeads < targetLeadCount) {
+          addLog(`Run finished below the target of ${targetLeadCount}. You may want a broader location or another active Gemini key for a second pass.`, 'info');
+        } else {
+          addLog(`Target achieved: collected at least ${targetLeadCount} usable leads for this run.`, 'success');
+        }
+
+        await autoSaveToSheets(state.leads);
+      } catch (err) {
+        const friendly = summarizeApiIssue(err.message);
+        leadgenDebug.error('runLeadGen:exception', { mode: state.mode, industry, location, targetLeadCount, targetRole, message: err.message, friendly, error: String(err) });
+        if (emptyStateMessage) {
+          emptyStateMessage.textContent = friendly;
+        }
+        addLog(`Lead generation failed: ${escapeHtml(friendly)}`, 'error');
+      } finally {
+        leadgenDebug.log('runLeadGen:finally', { final_lead_count: state.leads.length, running: state.running, sessionId });
+        setBusy(false);
+        stopTimer();
+        finishProgress();
+      }
+    }
+
+    function setBusy(busy) {
+      state.running = busy;
+      startBtn.disabled = busy;
+      loaderIcon.classList.toggle('hidden', !busy);
+      btnText.textContent = busy ? 'Researching Leads...' : 'Generate Leads';
+      logLive.classList.toggle('hidden', !busy);
+    }
+
+    function normalizeLead(raw) {
+      const lead = {};
+      const keys = Object.keys(raw || {});
+      const find = (keywords) => {
+        const key = keys.find(k => keywords.some(kw => k.toLowerCase().replace(/_/g, ' ').includes(kw)));
+        return key ? raw[key] : null;
+      };
+
+      lead.company_name = find(['company name', 'company', 'name', 'business']) || '—';
+      lead.company_website = find(['website', 'url', 'domain', 'link']);
+      lead.company_size = find(['size', 'employees', 'headcount']);
+      lead.contact_person_name = find(['contact person', 'contact name', 'person name', 'lead name', 'founder', 'ceo', 'owner']) || '';
+      lead.contact_person_title = find(['person title', 'contact title', 'job title', 'role', 'designation']) || '';
+      lead.founder_name = lead.contact_person_name || find(['founder', 'ceo', 'owner']) || '—';
+      lead.linkedin_url = find(['linkedin', 'profile']);
+      lead.contact_email = find(['email', 'mail']) || '—';
+      lead.contact_phone = find(['phone', 'mobile', 'tel']) || '—';
+      lead.contact_page = find(['contact page', 'contact url', 'contact form']);
+      lead.source = find(['source', 'origin']) || 'web';
+      lead.confidence = String(find(['confidence']) || 'low').toLowerCase();
+      lead.quality_score = Number(find(['quality score', 'score']) || 0);
+      lead.quality_status = find(['quality status']) || 'unreviewed';
+      lead.usable = find(['usable']);
+      lead.rejected = find(['rejected']);
+      lead.quality_notes = find(['quality notes', 'notes']) || [];
+      lead.quality_warnings = find(['quality warnings', 'warnings']) || [];
+      lead.field_sources = find(['field sources', 'sources']) || {};
+      lead.email_status = find(['email status']);
+      lead.verification_status = find(['verification status']);
+      lead.verification_message = find(['verification message']);
+      lead.industry = find(['industry', 'type', 'specialty', 'sector']) || (state.mode === 'velit' ? 'Upfitter' : (industryInput.value.trim() || 'General'));
+      lead.specialty = lead.industry;
+      lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
+
+      const rawCity = find(['city']) || '';
+      const rawState = find(['state']) || '';
+      const rawZip = find(['zip', 'postal']) || '';
+      const rawLocation = find(['location', 'address']) || '';
+
+      if (rawCity || rawState || rawZip) {
+        lead.city = rawCity;
+        lead.state = rawState;
+        lead.zip_code = rawZip;
+      } else if (rawLocation) {
+        const parts = String(rawLocation).split(',').map(part => part.trim());
+        lead.city = parts[0] || rawLocation;
+        lead.state = parts[1] || '';
+        lead.zip_code = parts[2] || '';
+      } else {
+        lead.city = '';
+        lead.state = '';
+        lead.zip_code = '';
+      }
+
+      lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
+      lead.status = find(['status']) || 'New';
+      lead.notes = find(['notes', 'comments', 'remarks']) || lead.value_proposition || '';
       return lead;
     }
 
@@ -1040,6 +1747,9 @@
     [industryInput, locationInput].forEach(el =>
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && !state.running) runLeadGen(); })
     );
+    [leadCountInput, roleInput].forEach(el =>
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' && !state.running) runLeadGen(); })
+    );
 
     // ── LinkedIn Session Sync Logic ───────────────────────────────────────────
     const cookieInput = document.getElementById('cookie-input');
@@ -1048,8 +1758,11 @@
 
     async function checkCookieStatus() {
       try {
+        leadgenDebug.log('checkCookieStatus:start', {});
         const res = await fetch('/api/leads/linkedin_session/status');
+        leadgenDebug.log('checkCookieStatus:response_status', { status: res.status, ok: res.ok });
         const data = await res.json();
+        leadgenDebug.log('checkCookieStatus:response_body', data);
         if (data.status === 'active') {
           cookieStatus.textContent = 'Active';
           cookieStatus.className = 'text-[9px] px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 text-green-400 font-bold uppercase tracking-wider';
@@ -1058,6 +1771,7 @@
           cookieStatus.className = 'text-[9px] px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 font-bold uppercase tracking-wider';
         }
       } catch (err) {
+        leadgenDebug.error('checkCookieStatus:exception', { message: err.message, error: String(err) });
         console.error('Failed to check cookie status', err);
       }
     }

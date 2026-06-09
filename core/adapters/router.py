@@ -139,8 +139,13 @@ def _build_gemini_adapter(
 def _build_openai_adapter(
     model_name: Optional[str] = None,
     embedding_model: Optional[str] = None,
+    api_key_env: str = "OPENAI_API_KEY",
+    default_model: str = "gpt-4o-mini",
+    default_embedding_model: str = "text-embedding-3-small",
+    base_url: Optional[str] = None,
+    default_headers: Optional[dict] = None,
 ) -> Optional[BaseLLMAdapter]:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv(api_key_env)
     if not api_key:
         return None
     try:
@@ -149,9 +154,39 @@ def _build_openai_adapter(
         logger.warning("OpenAI adapter unavailable: %s", exc)
         return None
 
-    model_name = model_name or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    embedding_model = embedding_model or os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-    return OpenAIAdapter(api_key=api_key, model_name=model_name, embedding_model=embedding_model)
+    model_name = model_name or os.getenv("OPENAI_MODEL", default_model)
+    embedding_model = embedding_model or os.getenv("OPENAI_EMBEDDING_MODEL", default_embedding_model)
+    return OpenAIAdapter(
+        api_key=api_key,
+        model_name=model_name,
+        embedding_model=embedding_model,
+        base_url=base_url,
+        default_headers=default_headers,
+    )
+
+
+def _build_openrouter_adapter(
+    model_name: Optional[str] = None,
+    embedding_model: Optional[str] = None,
+) -> Optional[BaseLLMAdapter]:
+    site_url = os.getenv("OPENROUTER_SITE_URL", "http://localhost:8000")
+    app_name = os.getenv("OPENROUTER_APP_NAME", "Agentic Core")
+    default_headers = {
+        "HTTP-Referer": site_url,
+        "X-Title": app_name,
+    }
+    return _build_openai_adapter(
+        model_name=model_name or os.getenv("OPENROUTER_MODEL", "openrouter/auto"),
+        embedding_model=embedding_model or os.getenv(
+            "OPENROUTER_EMBEDDING_MODEL",
+            os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        ),
+        api_key_env="OPENROUTER_API_KEY",
+        default_model="openrouter/auto",
+        default_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+        default_headers=default_headers,
+    )
 
 
 def _build_anthropic_adapter(
@@ -189,6 +224,11 @@ def build_adapter_from_env(
             )
         elif provider == "openai":
             adapter = _build_openai_adapter(
+                model_name=model_override if provider == primary else None,
+                embedding_model=embedding_model_override if provider == primary else None,
+            )
+        elif provider == "openrouter":
+            adapter = _build_openrouter_adapter(
                 model_name=model_override if provider == primary else None,
                 embedding_model=embedding_model_override if provider == primary else None,
             )

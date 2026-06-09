@@ -51,8 +51,13 @@ async def get_existing_leads(mode: str = "generic"):
         return {"companies": []}
     
     service = LeadService(state.todo_store)
-    companies = await service.get_existing_companies(mode=mode)
-    return {"companies": companies}
+    try:
+        companies = await service.get_existing_companies(mode=mode)
+        return {"companies": companies}
+    except Exception as e:
+        import logging
+        logging.getLogger("api.leads").warning(f"Failed to fetch existing companies: {e}")
+        return {"companies": []}
 
 @router.post("/linkedin_session")
 async def update_linkedin_session(request: LinkedInSessionRequest):

@@ -1,0 +1,30 @@
+tool_name: google_contacts_search
+description: Search Google Contacts / People API for an existing contact that matches a discovered company or person
+endpoint_url: https://people.googleapis.com/v1/people:searchContacts
+endpoint_url_env: GOOGLE_CONTACTS_SEARCH_URL
+
+auth_header_name: Authorization
+auth_header_env: GOOGLE_PEOPLE_API_TOKEN
+auth_header_prefix: "Bearer "
+
+timeout_seconds: 20
+method: GET
+request_body_mode: raw_arguments
+static_headers: {}
+argument_headers: {}
+omit_arguments_from_body: []
+
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+      description: Name, email, company, or partial query to search inside Google Contacts
+    pageSize:
+      type: integer
+      description: Maximum number of contacts to return
+    readMask:
+      type: string
+      description: Requested People API fields, such as names,emailAddresses,phoneNumbers,organizations
+  required:
+    - query

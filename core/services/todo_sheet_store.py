@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 class TodoSheetStore:
+    LEAD_META_PREFIX = "[AGENTIC_META]"
     SCOPES = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file",
@@ -502,14 +503,17 @@ class TodoSheetStore:
         """
         Append a single lead row to the dedicated 'leads' worksheet.
         Column order: Company Name, Specialty, Contact Name, Email, Phone,
-                      Website, City, State, Zip Code, Status, Notes.
+        Website, City, State, Zip Code, Status, Notes.
         Returns the dict that was written.
         """
         self._require_ready()
+        notes = str(lead.get("notes", "") or lead.get("value_proposition", "")).strip()
+        metadata = self._build_lead_metadata(lead)
+        serialized_notes = self._serialize_lead_notes(notes, metadata)
         row_data = {
             "Company Name": str(lead.get("company_name", "")).strip(),
             "Specialty":    str(lead.get("specialty", "")).strip(),
-            "Contact Name": str(lead.get("contact_name", "") or lead.get("founder_name", "")).strip(),
+            "Contact Name": str(lead.get("contact_name", "") or lead.get("contact_person_name", "") or lead.get("founder_name", "")).strip(),
             "Email":        str(lead.get("email", "") or lead.get("contact_email", "")).strip(),
             "Phone":        str(lead.get("phone", "") or lead.get("contact_phone", "")).strip(),
             "Website":      str(lead.get("website", "") or lead.get("company_website", "")).strip(),
@@ -517,7 +521,7 @@ class TodoSheetStore:
             "State":        str(lead.get("state", "")).strip(),
             "Zip Code":     str(lead.get("zip_code", "")).strip(),
             "Status":       str(lead.get("status", "New")).strip() or "New",
-            "Notes":        str(lead.get("notes", "") or lead.get("value_proposition", "")).strip(),
+            "Notes":        serialized_notes,
         }
         row = [row_data.get(h, "") for h in self._lead_headers_current]
         self._leads_ws.append_row(row, value_input_option="USER_ENTERED")
@@ -526,7 +530,16 @@ class TodoSheetStore:
     def list_leads(self) -> List[Dict[str, Any]]:
         """Return all rows from the leads worksheet as a list of dicts."""
         self._require_ready()
-        return self._leads_ws.get_all_records(default_blank="")
+        records = self._leads_ws.get_all_records(default_blank="")
+        enriched: List[Dict[str, Any]] = []
+        for row in records:
+            item = dict(row)
+            raw_notes = str(item.get("Notes", "") or "")
+            note_text, metadata = self._parse_lead_notes(raw_notes)
+            item["Notes"] = note_text
+            item["metadata"] = metadata
+            enriched.append(item)
+        return enriched
 
     def get_lead_company_names(self) -> List[str]:
         """Return existing company names from the leads sheet (for deduplication)."""
@@ -540,3 +553,44 @@ class TodoSheetStore:
         except ValueError:
             return []
         return [row[col_idx].strip() for row in rows[1:] if col_idx < len(row) and row[col_idx].strip()]
+
+    @classmethod
+    def _build_lead_metadata(cls, lead: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = {
+            "linkedin_url": str(lead.get("linkedin_url", "")).strip(),
+            "contact_page": str(lead.get("contact_page", "")).strip(),
+            "source": str(lead.get("source", "")).strip(),
+            "confidence": str(lead.get("confidence", "")).strip(),
+            "quality_score": lead.get("quality_score", 0),
+            "quality_status": str(lead.get("quality_status", "")).strip(),
+            "contact_person_title": str(lead.get("contact_person_title", "")).strip(),
+            "contact_person_name": str(lead.get("contact_person_name", "") or lead.get("founder_name", "")).strip(),
+            "field_sources": lead.get("field_sources", {}) or {},
+            "contact_paths": lead.get("contact_paths", []) or [],
+        }
+        return {
+            key: value
+            for key, value in metadata.items()
+            if value not in ("", [], {}, None)
+        }
+
+    @classmethod
+    def _serialize_lead_notes(cls, notes: str, metadata: Dict[str, Any]) -> str:
+        if not metadata:
+            return notes
+        payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+        if notes:
+            return f"{notes}\n{cls.LEAD_META_PREFIX}{payload}"
+        return f"{cls.LEAD_META_PREFIX}{payload}"
+
+    @classmethod
+    def _parse_lead_notes(cls, value: str) -> Tuple[str, Dict[str, Any]]:
+        text = str(value or "")
+        if cls.LEAD_META_PREFIX not in text:
+            return text, {}
+        base, meta = text.split(cls.LEAD_META_PREFIX, 1)
+        base = base.strip()
+        try:
+            return base, json.loads(meta.strip())
+        except Exception:
+            return base, {}

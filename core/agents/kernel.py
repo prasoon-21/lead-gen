@@ -3,6 +3,7 @@ import logging
 import re
 import time
 import uuid
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
 from config.schemas import AgentSpec
@@ -120,6 +121,119 @@ class AgentKernel:
                 data={"trace_id": trace_id, **payload},
             )
 
+    @staticmethod
+    def _is_lead_generation_agent(spec: AgentSpec) -> bool:
+        return spec.agent_id == "lead_gen_agent"
+
+    @staticmethod
+    def _normalize_company_name(title: str, url: str) -> str:
+        cleaned_title = (title or "").strip()
+        if cleaned_title:
+            for separator in (" | ", " - ", " — ", " :: ", ": "):
+                if separator in cleaned_title:
+                    cleaned_title = cleaned_title.split(separator)[0].strip()
+                    break
+        if cleaned_title:
+            return cleaned_title
+
+        host = (urlparse(url or "").hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if not host:
+            return "Unknown Company"
+        base = host.split(".")[0].replace("-", " ").replace("_", " ").strip()
+        return base.title() if base else host
+
+    def _build_forced_search_arguments(self, message: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        industry = str(context.get("industry") or "").strip()
+        location = str(context.get("location") or "").strip()
+        target_role = str(context.get("target_role") or "").strip()
+        target_count = int(context.get("target_company_pool") or max(12, int(context.get("target_lead_count") or 15) * 2))
+
+        if industry and location:
+            query = f"{industry} companies in {location}"
+        elif message.strip():
+            query = message.strip()
+        else:
+            query = "B2B companies"
+
+        if target_role:
+            query = f"{query} {target_role}"
+
+        return {
+            "query": query,
+            "industry": industry,
+            "location": location,
+            "expand_queries": bool(context.get("search_expansion_enabled", True)),
+            "max_results": min(max(target_count, 12), 30),
+            "max_results_per_query": 6,
+            "search_depth": "advanced",
+            "include_raw_content": False,
+        }
+
+    def _synthesize_leads_from_tool_history(self, tool_history: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        target_count = max(1, int(context.get("target_lead_count") or 15))
+        industry = str(context.get("industry") or "").strip() or "General"
+        location = str(context.get("location") or "").strip() or "Unknown"
+
+        candidate_results: List[Dict[str, Any]] = []
+        candidate_sites: List[str] = []
+        for step in tool_history:
+            if step.get("tool_name") == "web_search":
+                result = ((step.get("result") or {}).get("output") or {})
+                candidate_results.extend(result.get("results") or [])
+            elif step.get("tool_name") == "web_research":
+                result = ((step.get("result") or {}).get("output") or {})
+                candidate_results.extend(result.get("results") or [])
+                candidate_sites.extend(result.get("candidate_websites") or [])
+
+        sites_set = {site for site in candidate_sites if site}
+        leads: List[Dict[str, Any]] = []
+        seen_domains = set()
+
+        for item in candidate_results:
+            url = (item.get("url") or "").strip()
+            if not url:
+                continue
+            parsed = urlparse(url)
+            domain = (parsed.hostname or "").lower()
+            if not domain:
+                continue
+            if domain.startswith("www."):
+                domain = domain[4:]
+            if domain in seen_domains:
+                continue
+            seen_domains.add(domain)
+
+            website = f"{parsed.scheme or 'https'}://{parsed.netloc}" if parsed.netloc else url
+            company_name = self._normalize_company_name(item.get("title", ""), url)
+            snippet = (item.get("content") or "").strip()
+
+            leads.append(
+                {
+                    "company_name": company_name,
+                    "company_website": website,
+                    "industry": industry,
+                    "location": location,
+                    "value_proposition": snippet[:280] or f"{company_name} appears in search results for {industry} in {location}.",
+                    "company_size": "",
+                    "contact_person_name": "",
+                    "founder_name": "",
+                    "contact_person_title": "",
+                    "contact_email": "",
+                    "contact_phone": "",
+                    "linkedin_url": "",
+                    "contact_page": website if website in sites_set else "",
+                    "source": "web_search",
+                    "confidence": "low",
+                }
+            )
+
+            if len(leads) >= target_count:
+                break
+
+        return leads
+
     async def run(
         self,
         spec: AgentSpec,
@@ -148,6 +262,7 @@ class AgentKernel:
         tool_history: List[Dict[str, Any]] = []
         step_logs: List[Dict[str, Any]] = []
         system_prompt = self._system_prompt(spec, system_prompt_text, developer_prompt_text)
+        invalid_decision_count = 0
 
         for step in range(1, spec.max_steps + 1):
             elapsed = time.perf_counter() - run_started
@@ -184,6 +299,7 @@ class AgentKernel:
             )
 
             if decision_type == "final_answer":
+                invalid_decision_count = 0
                 final_answer = str(decision.get("final_answer", "")).strip()
                 if not final_answer:
                     final_answer = "I could not complete the task."
@@ -242,6 +358,53 @@ class AgentKernel:
 
             if decision_type != "tool_call":
                 step_logs.append({"step": step, "type": "invalid_decision", "decision": decision})
+                invalid_decision_count += 1
+                if (
+                    self._is_lead_generation_agent(spec)
+                    and tool_calls == 0
+                    and invalid_decision_count >= 3
+                    and "web_search" in spec.allowed_tools
+                    and tool_calls < policy.max_tool_calls
+                ):
+                    forced_arguments = self._build_forced_search_arguments(message, context)
+                    forced_tool_context = ToolContext(
+                        session_id=session_id,
+                        trace_id=trace_id,
+                        resources=resources,
+                        state=context,
+                    )
+                    forced_result = await self.executor.execute(
+                        tool_name="web_search",
+                        arguments=forced_arguments,
+                        context=forced_tool_context,
+                        policy=policy,
+                    )
+                    tool_calls += 1
+                    forced_result_dict = forced_result.to_dict()
+                    forced_step_log = {
+                        "step": step,
+                        "type": "forced_tool_call",
+                        "tool_name": "web_search",
+                        "arguments": forced_arguments,
+                        "result": forced_result_dict,
+                    }
+                    step_logs.append(forced_step_log)
+                    tool_history.append(forced_step_log)
+                    context[f"tool_{step}_web_search"] = forced_result_dict
+                    self._log_step(
+                        trace_id,
+                        "agent_tool_call",
+                        {
+                            "session_id": session_id,
+                            "agent_id": spec.agent_id,
+                            "step": step,
+                            "tool_name": "web_search",
+                            "ok": forced_result.ok,
+                            "latency_ms": forced_result.latency_ms,
+                            "error": forced_result.error,
+                        },
+                    )
+                    invalid_decision_count = 0
                 continue
 
             if tool_calls >= policy.max_tool_calls:
@@ -250,6 +413,7 @@ class AgentKernel:
 
             tool_name = str(decision.get("tool_name", "")).strip()
             arguments = decision.get("arguments", {}) or {}
+            invalid_decision_count = 0
             tool_calls += 1
             tool_context = ToolContext(
                 session_id=session_id,
@@ -290,6 +454,39 @@ class AgentKernel:
             )
 
             context[f"tool_{step}_{tool_name}"] = result_dict
+
+        if self._is_lead_generation_agent(spec):
+            synthesized_leads = self._synthesize_leads_from_tool_history(tool_history, context)
+            if synthesized_leads:
+                json_output = {"leads": synthesized_leads}
+                self.memory_store.add_message(session_id, "user", message)
+                self.memory_store.add_message(session_id, "assistant", json.dumps(json_output, ensure_ascii=False))
+                self._log_step(
+                    trace_id,
+                    "agent_final_answer",
+                    {
+                        "session_id": session_id,
+                        "agent_id": spec.agent_id,
+                        "step": spec.max_steps,
+                        "tool_name": "-",
+                        "decision_type": "forced_search_final",
+                    },
+                )
+                return {
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                    "response_mode": "json",
+                    "text": None,
+                    "json": json_output,
+                    "steps": step_logs,
+                    "metadata": {
+                        "agent_id": spec.agent_id,
+                        "tool_calls": tool_calls,
+                        "completed": True,
+                        "forced_fallback": True,
+                        "latency_ms": (time.perf_counter() - run_started) * 1000,
+                    },
+                }
 
         fallback = "I could not complete the task within the allowed steps."
         self.memory_store.add_message(session_id, "user", message)

@@ -75,7 +75,7 @@ class GeminiAdapter(BaseLLMAdapter):
             system_instruction=system_prompt or "",
         )
 
-        response = self._client.models.generate_content(
+        response = await self._client.aio.models.generate_content(
             model=self._model_name,
             contents=prompt,
             config=config,
@@ -128,7 +128,7 @@ class GeminiAdapter(BaseLLMAdapter):
             max_output_tokens=8192,
         )
 
-        response = self._client.models.generate_content(
+        response = await self._client.aio.models.generate_content(
             model=self._model_name,
             contents=parts,
             config=config,
@@ -160,61 +160,56 @@ class GeminiAdapter(BaseLLMAdapter):
     ) -> Dict[str, Any]:
         json_system = (system_prompt or "") + "\n\nRespond with valid JSON only. No markdown fences, no explanation. Just the JSON object/array."
         
+        response = await self.generate(
+            prompt=prompt,
+            system_prompt=json_system,
+            temperature=temperature,
+            max_tokens=8192
+        )
+        
+        text = response.text.strip()
+        if not text:
+            return {}
+
+        # Attempt 1: Direct parse
         try:
-            response = await self.generate(
-                prompt=prompt,
-                system_prompt=json_system,
-                temperature=temperature,
-                max_tokens=2048
-            )
-            
-            text = response.text.strip()
-            if not text:
-                return {}
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
 
-            # Attempt 1: Direct parse
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
-
-            # Attempt 2: Extract from markdown fences or bare braces
-            # We look for the first { or [ and then find the matching closing character
-            try:
-                # Find all potential JSON blocks
-                matches = re.finditer(r'([\[\{])', text)
-                for match in matches:
-                    start_char = match.group(1)
-                    end_char = '}' if start_char == '{' else ']'
-                    start_pos = match.start()
-                    
-                    # Find matching closing bracket by counting nesting level
-                    depth = 0
-                    for i in range(start_pos, len(text)):
-                        if text[i] == start_char:
-                            depth += 1
-                        elif text[i] == end_char:
-                            depth -= 1
-                            if depth == 0:
-                                candidate = text[start_pos:i+1]
-                                try:
-                                    return safe_json_loads(candidate)
-                                except Exception:
-                                    continue # Try next block if this one fails
+        # Attempt 2: Extract from markdown fences or bare braces
+        # We look for the first { or [ and then find the matching closing character
+        try:
+            # Find all potential JSON blocks
+            matches = re.finditer(r'([\[\{])', text)
+            for match in matches:
+                start_char = match.group(1)
+                end_char = '}' if start_char == '{' else ']'
+                start_pos = match.start()
                 
-                # Fallback to repair the whole text if no perfect block found
-                return safe_json_loads(text)
-            except Exception:
-                pass
-
-            return {"error": "malformed_json", "raw": text[:200]}
+                # Find matching closing bracket by counting nesting level
+                depth = 0
+                for i in range(start_pos, len(text)):
+                    if text[i] == start_char:
+                        depth += 1
+                    elif text[i] == end_char:
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[start_pos:i+1]
+                            try:
+                                return safe_json_loads(candidate)
+                            except Exception:
+                                continue # Try next block if this one fails
             
-        except Exception as e:
-            print(f"Gemini generate_json failed: {e}")
-            return {"error": str(e)}
+            # Fallback to repair the whole text if no perfect block found
+            return safe_json_loads(text)
+        except Exception:
+            pass
+
+        return {"error": "malformed_json", "raw": text[:200]}
     
     async def embed(self, text: str) -> List[float]:
-        result = self._client.models.embed_content(
+        result = await self._client.aio.models.embed_content(
             model=self.embedding_model,
             contents=text,
         )

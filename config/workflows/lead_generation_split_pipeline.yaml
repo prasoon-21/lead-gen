@@ -1,0 +1,35 @@
+workflow_id: lead_generation_split_pipeline
+version: "1.0"
+description: "Two-stage lead-generation workflow: broad company discovery followed by person/contact enrichment."
+start_at: discover_companies
+
+nodes:
+  - node_id: discover_companies
+    node_type: agent
+    config:
+      agent_id: lead_company_discovery_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.discovery_text: text
+      outputs.discovery_json: json
+      outputs.discovery_steps: steps
+    transitions:
+      - to: enrich_contacts
+        when: always
+
+  - node_id: enrich_contacts
+    node_type: agent
+    config:
+      agent_id: lead_contact_enrichment_agent
+    input_map:
+      message: outputs.discovery_text
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.enriched_text: text
+      outputs.enriched_leads: json.leads
+      outputs.enrichment_steps: steps
+    transitions: []

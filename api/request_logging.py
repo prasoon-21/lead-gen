@@ -18,6 +18,14 @@ class RequestLogFilter(logging.Filter):
         return True
 
 
+def _build_file_handler(resolved_path: str) -> logging.Handler:
+    # Timed rotating handlers frequently fail on Windows during local reloads
+    # because the file cannot be renamed while another process still holds it.
+    if os.name == "nt":
+        return logging.FileHandler(resolved_path, encoding="utf-8")
+    return TimedRotatingFileHandler(resolved_path, when="midnight", backupCount=7)
+
+
 def setup_request_logging(log_path: str | None = None) -> logging.Logger:
     logger = logging.getLogger("api.request")
     if logger.handlers:
@@ -42,7 +50,7 @@ def setup_request_logging(log_path: str | None = None) -> logging.Logger:
 
     try:
         Path(resolved_path).parent.mkdir(parents=True, exist_ok=True)
-        file_handler = TimedRotatingFileHandler(resolved_path, when="midnight", backupCount=7)
+        file_handler = _build_file_handler(resolved_path)
         file_handler.setFormatter(formatter)
         file_handler.addFilter(RequestLogFilter())
         logger.addHandler(file_handler)

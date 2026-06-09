@@ -1,0 +1,49 @@
+# TEMPLATE â€” files starting with _ are skipped at load time.
+#
+# Future Apollo.io enrichment template.
+# To enable it later:
+#   1. Copy this file to a new filename without the leading underscore.
+#   2. Set the real endpoint and auth env var.
+#   3. Add the tool_name to the allowed_tools list for the agent.
+
+tool_name: apollo_people_search
+description: Search Apollo for decision-makers at a company and enrich leads with people/contact data
+endpoint_url: https://api.apollo.io/api/v1/mixed_people/search
+endpoint_url_env: ""
+
+auth_header_name: X-Api-Key
+auth_header_env: APOLLO_API_KEY
+auth_header_prefix: ""
+
+timeout_seconds: 30
+method: POST
+request_body_mode: raw_arguments
+static_headers: {}
+argument_headers: {}
+omit_arguments_from_body: []
+
+input_schema:
+  type: object
+  properties:
+    company_name:
+      type: string
+      description: Company name to enrich
+    company_domain:
+      type: string
+      description: Company website domain if known
+    location:
+      type: string
+      description: Geographic hint for narrowing results
+    titles:
+      type: array
+      items:
+        type: string
+      description: Priority titles to search, such as founder, owner, CEO, director
+    page:
+      type: integer
+      description: Pagination page
+    per_page:
+      type: integer
+      description: Maximum number of records to return
+  required:
+    - company_name

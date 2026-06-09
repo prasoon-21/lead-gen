@@ -1,8 +1,10 @@
 import json
+import re
 import time
 from typing import Dict, Any, Optional, List
 
 from core.adapters.base import BaseLLMAdapter, LLMResponse
+from core.extraction.json_repair import safe_json_loads
 
 try:
     from openai import OpenAI
@@ -11,13 +13,25 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 class OpenAIAdapter(BaseLLMAdapter):
-    def __init__(self, api_key: str, model_name: str, embedding_model: str):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str,
+        embedding_model: str,
+        base_url: Optional[str] = None,
+        default_headers: Optional[Dict[str, str]] = None,
+    ):
         if OpenAI is None:
             raise ImportError("openai package not installed. Run: pip install openai")
         api_key = self._sanitize_api_key(api_key)
         super().__init__(api_key, model_name)
         self.embedding_model = embedding_model
-        self.client = OpenAI(api_key=api_key)
+        client_kwargs: Dict[str, Any] = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        if default_headers:
+            client_kwargs["default_headers"] = default_headers
+        self.client = OpenAI(**client_kwargs)
 
     @staticmethod
     def _sanitize_api_key(value: str) -> str:
@@ -113,10 +127,41 @@ class OpenAIAdapter(BaseLLMAdapter):
             max_tokens=2048,
         )
         text = response.text.strip()
+        if not text:
+            return {}
+
         if text.startswith("```"):
             lines = text.split("\n")
             text = "\n".join(lines[1:-1]) if len(lines) > 2 else text
-        return json.loads(text)
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        try:
+            matches = re.finditer(r"([\[\{])", text)
+            for match in matches:
+                start_char = match.group(1)
+                end_char = "}" if start_char == "{" else "]"
+                start_pos = match.start()
+
+                depth = 0
+                for i in range(start_pos, len(text)):
+                    if text[i] == start_char:
+                        depth += 1
+                    elif text[i] == end_char:
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[start_pos:i + 1]
+                            try:
+                                return safe_json_loads(candidate)
+                            except Exception:
+                                continue
+
+            return safe_json_loads(text)
+        except Exception:
+            return {"error": "malformed_json", "raw": text[:500]}
 
     async def embed(self, text: str) -> List[float]:
         response = self.client.embeddings.create(

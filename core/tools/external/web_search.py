@@ -46,6 +46,28 @@ class WebSearchTool(BaseTool):
         "\"{industry}\" \"{location}\" company",
         "\"{industry}\" \"{location}\" founder",
     )
+    _default_excluded_domains = (
+        "linkedin.com",
+        "www.linkedin.com",
+        "facebook.com",
+        "www.facebook.com",
+        "instagram.com",
+        "www.instagram.com",
+        "crunchbase.com",
+        "www.crunchbase.com",
+        "zoominfo.com",
+        "www.zoominfo.com",
+        "clutch.co",
+        "www.clutch.co",
+        "goodfirms.co",
+        "www.goodfirms.co",
+        "yelp.com",
+        "www.yelp.com",
+        "builtin.com",
+        "www.builtin.com",
+        "wellfound.com",
+        "www.wellfound.com",
+    )
 
     @staticmethod
     def _normalize_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -115,6 +137,29 @@ class WebSearchTool(BaseTool):
     def _source_domain(item: Dict[str, Any]) -> str:
         return (urlparse(item.get("url") or "").hostname or "").lower()
 
+    @classmethod
+    def _merged_excluded_domains(cls, supplied: List[str]) -> List[str]:
+        merged: List[str] = []
+        for domain in list(cls._default_excluded_domains) + list(supplied or []):
+            cleaned = (domain or "").strip().lower()
+            if cleaned and cleaned not in merged:
+                merged.append(cleaned)
+        return merged
+
+    @classmethod
+    def _quality_boost(cls, item: Dict[str, Any]) -> int:
+        domain = cls._source_domain(item)
+        title = str(item.get("title") or "").lower()
+        content = str(item.get("content") or "").lower()
+        boost = 0
+        if domain and domain not in cls._default_excluded_domains:
+            boost += 2
+        if "official" in title or "official" in content:
+            boost += 2
+        if any(term in title for term in ("about", "team", "leadership", "contact")):
+            boost += 1
+        return boost
+
     async def run(self, arguments: Dict[str, Any], context: ToolContext) -> Dict[str, Any]:
         query = arguments.get("query", "").strip()
         if not query:
@@ -130,7 +175,7 @@ class WebSearchTool(BaseTool):
         payload_base = {
             "search_depth": arguments.get("search_depth", "advanced"),
             "include_domains": arguments.get("include_domains") or [],
-            "exclude_domains": arguments.get("exclude_domains") or [],
+            "exclude_domains": self._merged_excluded_domains(arguments.get("exclude_domains") or []),
             "include_raw_content": bool(arguments.get("include_raw_content", False)),
         }
 
@@ -156,7 +201,11 @@ class WebSearchTool(BaseTool):
 
         deduped: List[Dict[str, Any]] = []
         seen = set()
-        for item in sorted(aggregated, key=lambda result: result.get("score") or 0, reverse=True):
+        for item in sorted(
+            aggregated,
+            key=lambda result: (result.get("score") or 0) + self._quality_boost(result),
+            reverse=True,
+        ):
             key = self._result_key(item)
             if key in seen:
                 continue

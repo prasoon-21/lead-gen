@@ -2,30 +2,62 @@ import time
 import json
 import base64
 import re
-from typing import Dict, Any, Optional, List
+import asyncio
+import logging
+from typing import Dict, Any, Optional, List, Callable, Awaitable
 
+from google.api_core import exceptions as google_exceptions
 from google import genai
 from google.genai import types as genai_types
 
 from core.extraction.json_repair import safe_json_loads
 from core.adapters.base import BaseLLMAdapter, LLMResponse
 
+logger = logging.getLogger(__name__)
+
 
 class GeminiAdapter(BaseLLMAdapter):
-    
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    DEFAULT_MODEL = "gemini-1.5-flash"
     EMBEDDING_MODEL = "models/text-embedding-004"
-    
+
     def __init__(
         self,
         api_key: str,
         model_name: str = DEFAULT_MODEL,
-        embedding_model: str = EMBEDDING_MODEL
+        embedding_model: str = EMBEDDING_MODEL,
     ):
         super().__init__(api_key, model_name)
         self.embedding_model = embedding_model
         self._client = genai.Client(api_key=api_key)
         self._model_name = model_name
+
+    async def _with_retry(
+        self, func: Callable[..., Awaitable[Any]], *args, **kwargs
+    ) -> Any:
+        """
+        Retry an async function with exponential backoff.
+        """
+        max_retries = 5
+        base_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                return await func(*args, **kwargs)
+            except (
+                google_exceptions.ResourceExhausted,
+                google_exceptions.ServiceUnavailable,
+                google_exceptions.DeadlineExceeded,
+            ) as e:
+                if attempt == max_retries - 1:
+                    logger.error("Gemini API max retries reached. Failing permanently.")
+                    raise e  # Raise the original, helpful Google API exception instead of generic string
+                
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "Gemini API transient error: %s. Retrying in %d seconds (Attempt %d/%d)...", 
+                    e, delay, attempt + 1, max_retries
+                )
+                await asyncio.sleep(delay)
 
     def _extract_text(self, response) -> str:
         try:
@@ -58,24 +90,29 @@ class GeminiAdapter(BaseLLMAdapter):
                 finish_reason = finish_reason.name
             except Exception:
                 finish_reason = str(finish_reason)
-        raise RuntimeError(f"LLM response contained no text (finish_reason={finish_reason})")
-    
+        raise RuntimeError(
+            f"LLM response contained no text (finish_reason={finish_reason})"
+        )
+
     async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 8192
+        max_tokens: int = 8192,
+        response_mime_type: Optional[str] = None,  # Added to support native structural modes
     ) -> LLMResponse:
         start_time = time.time()
 
         config = genai_types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_tokens,
-            system_instruction=system_prompt or "",
+            system_instruction=system_prompt,
+            response_mime_type=response_mime_type,
         )
 
-        response = await self._client.aio.models.generate_content(
+        response = await self._with_retry(
+            self._client.aio.models.generate_content,
             model=self._model_name,
             contents=prompt,
             config=config,
@@ -85,9 +122,11 @@ class GeminiAdapter(BaseLLMAdapter):
 
         input_tokens = 0
         output_tokens = 0
-        if hasattr(response, 'usage_metadata'):
-            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
-            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+        if hasattr(response, "usage_metadata"):
+            input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            output_tokens = (
+                getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            )
 
         text = self._extract_text(response)
         return LLMResponse(
@@ -96,21 +135,19 @@ class GeminiAdapter(BaseLLMAdapter):
             output_tokens=output_tokens,
             model=self.model_name,
             latency_ms=latency_ms,
-            raw_response=response
+            raw_response=response,
         )
-    
+
     async def generate_with_vision(
         self,
         prompt: str,
         images: List[Dict[str, Any]],
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ) -> LLMResponse:
         start_time = time.time()
 
         parts = []
-        if system_prompt:
-            parts.append(genai_types.Part(text=system_prompt + "\n\n"))
         parts.append(genai_types.Part(text=prompt))
 
         for img in images:
@@ -119,16 +156,20 @@ class GeminiAdapter(BaseLLMAdapter):
                 base64_data = base64_data.split(",")[1]
             mime_type = img.get("mimeType", "image/png")
             image_bytes = base64.b64decode(base64_data)
-            parts.append(genai_types.Part(
-                inline_data=genai_types.Blob(mime_type=mime_type, data=image_bytes)
-            ))
+            parts.append(
+                genai_types.Part(
+                    inline_data=genai_types.Blob(mime_type=mime_type, data=image_bytes)
+                )
+            )
 
         config = genai_types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=8192,
+            system_instruction=system_prompt,
         )
 
-        response = await self._client.aio.models.generate_content(
+        response = await self._with_retry(
+            self._client.aio.models.generate_content,
             model=self._model_name,
             contents=parts,
             config=config,
@@ -138,9 +179,11 @@ class GeminiAdapter(BaseLLMAdapter):
 
         input_tokens = 0
         output_tokens = 0
-        if hasattr(response, 'usage_metadata'):
-            input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
-            output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+        if hasattr(response, "usage_metadata"):
+            input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
+            output_tokens = (
+                getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+            )
 
         text = self._extract_text(response)
         return LLMResponse(
@@ -149,45 +192,42 @@ class GeminiAdapter(BaseLLMAdapter):
             output_tokens=output_tokens,
             model=self.model_name,
             latency_ms=latency_ms,
-            raw_response=response
+            raw_response=response,
         )
-    
+
     async def generate_json(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
     ) -> Dict[str, Any]:
-        json_system = (system_prompt or "") + "\n\nRespond with valid JSON only. No markdown fences, no explanation. Just the JSON object/array."
-        
+        # Using native SDK application/json constraint guarantees structural validity
         response = await self.generate(
             prompt=prompt,
-            system_prompt=json_system,
+            system_prompt=system_prompt,
             temperature=temperature,
-            max_tokens=8192
+            max_tokens=8192,
+            response_mime_type="application/json",
         )
-        
+
         text = response.text.strip()
         if not text:
             return {}
 
-        # Attempt 1: Direct parse
+        # Attempt 1: Direct structural parse
         try:
             return json.loads(text)
         except json.JSONDecodeError:
             pass
 
-        # Attempt 2: Extract from markdown fences or bare braces
-        # We look for the first { or [ and then find the matching closing character
+        # Attempt 2: Fallback extraction mechanism if schema structure got modified downstream
         try:
-            # Find all potential JSON blocks
-            matches = re.finditer(r'([\[\{])', text)
+            matches = re.finditer(r"([\[\{])", text)
             for match in matches:
                 start_char = match.group(1)
-                end_char = '}' if start_char == '{' else ']'
+                end_char = "}" if start_char == "{" else "]"
                 start_pos = match.start()
-                
-                # Find matching closing bracket by counting nesting level
+
                 depth = 0
                 for i in range(start_pos, len(text)):
                     if text[i] == start_char:
@@ -195,22 +235,24 @@ class GeminiAdapter(BaseLLMAdapter):
                     elif text[i] == end_char:
                         depth -= 1
                         if depth == 0:
-                            candidate = text[start_pos:i+1]
+                            candidate = text[start_pos : i + 1]
                             try:
                                 return safe_json_loads(candidate)
                             except Exception:
-                                continue # Try next block if this one fails
-            
-            # Fallback to repair the whole text if no perfect block found
+                                continue
+
             return safe_json_loads(text)
         except Exception:
             pass
 
         return {"error": "malformed_json", "raw": text[:200]}
-    
+
     async def embed(self, text: str) -> List[float]:
-        result = await self._client.aio.models.embed_content(
+        response = await self._with_retry(
+            self._client.aio.models.embed_content,
             model=self.embedding_model,
             contents=text,
         )
-        return result.embeddings[0].values
+        if response.embeddings:
+            return response.embeddings[0].values
+        return []

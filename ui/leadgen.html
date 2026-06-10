@@ -464,6 +464,15 @@
       return text || 'Something went wrong while talking to the backend.';
     }
 
+    function isTransientModelLoadIssue(message) {
+      const text = String(message || '');
+      return /503|unavailable|high demand|experiencing high demand|service unavailable|overloaded/i.test(text);
+    }
+
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     const leadgenDebug = {
       enabled: true,
       log(label, payload) {
@@ -1516,41 +1525,85 @@
           : `Find at least ${targetLeadCount} usable B2B leads in the ${industry} space around ${location}. Search multiple query variations, then enrich each good company with a person and contact path.`;
 
         const requestBody = {
-          agent_id: 'lead_gen_agent',
-          message: `${discoveryInstruction} ${targetRoleInstruction} ${fallbackInstruction} ${dedupeInstruction} Return results in the required JSON schema only.`,
+          workflow_id: 'lead_generation_split_pipeline',
           session_id: sessionId,
-          context: {
-            industry,
-            location,
-            output_mode: 'json_list',
-            mode: state.mode,
-            target_lead_count: targetLeadCount,
-            target_role: targetRole,
-            search_expansion_enabled: true,
-            allow_fallback_contacts: true
+          payload: {
+            message: `${discoveryInstruction} ${targetRoleInstruction} ${fallbackInstruction} ${dedupeInstruction} Return results in the required JSON schema only.`,
+            context: {
+              industry,
+              location,
+              output_mode: 'json_list',
+              mode: state.mode,
+              target_lead_count: targetLeadCount,
+              target_company_pool: Math.max(50, targetLeadCount * 2),
+              target_role: targetRole,
+              search_expansion_enabled: true,
+              allow_fallback_contacts: true
+            }
           }
         };
         leadgenDebug.log('runLeadGen:request_body', requestBody);
-        const res = await fetch('/api/agent/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody)
-        });
-
-        const rawText = await res.text();
-        leadgenDebug.log('runLeadGen:response_status', { status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 1000) });
+        let res;
+        let rawText = '';
         let data = {};
-        try {
-          data = JSON.parse(rawText);
-          leadgenDebug.log('runLeadGen:parsed_response', data);
-        } catch (parseError) {
-          leadgenDebug.warn('runLeadGen:parse_failed', { message: parseError.message, raw_preview: rawText.slice(0, 1000) });
-        }
-        if (!res.ok) throw new Error(data.detail || rawText.substring(0, 240));
+        const maxAttempts = 2;
 
-        if (data.steps && Array.isArray(data.steps)) {
-          leadgenDebug.log('runLeadGen:steps', data.steps);
-          data.steps.forEach(step => {
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          leadgenDebug.log('runLeadGen:attempt', { attempt, maxAttempts, sessionId });
+          res = await fetch('/api/workflow/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+
+          rawText = await res.text();
+          leadgenDebug.log('runLeadGen:response_status', { attempt, status: res.status, ok: res.ok, raw_preview: rawText.slice(0, 1000) });
+          data = {};
+          try {
+            data = JSON.parse(rawText);
+            leadgenDebug.log('runLeadGen:parsed_response', { attempt, data });
+          } catch (parseError) {
+            leadgenDebug.warn('runLeadGen:parse_failed', { attempt, message: parseError.message, raw_preview: rawText.slice(0, 1000) });
+          }
+
+          if (res.ok) {
+            break;
+          }
+
+          const detail = data.detail || rawText.substring(0, 240);
+          if (attempt < maxAttempts && isTransientModelLoadIssue(detail)) {
+            const retryDelayMs = 5000;
+            leadgenDebug.warn('runLeadGen:retrying_after_load_issue', { attempt, retryDelayMs, detail });
+            if (emptyStateMessage) {
+              emptyStateMessage.textContent = 'Gemini is busy right now. Retrying automatically in a few seconds...';
+            }
+            addLog('Gemini is under heavy load. Retrying automatically in 5 seconds...', 'info');
+            await delay(retryDelayMs);
+            continue;
+          }
+
+          throw new Error(detail);
+        }
+
+        const workflowState = data.state || {};
+        const workflowMeta = data.metadata || {};
+        const workflowSteps = [
+          ...(Array.isArray(workflowState?.outputs?.discovery_steps) ? workflowState.outputs.discovery_steps : []),
+          ...(Array.isArray(workflowState?.outputs?.enrichment_steps) ? workflowState.outputs.enrichment_steps : [])
+        ];
+
+        if (workflowMeta && Object.keys(workflowMeta).length) {
+          leadgenDebug.log('runLeadGen:workflow_metadata', workflowMeta);
+          const totalSeconds = Math.max(1, Math.round(Number(workflowMeta.latency_ms || 0) / 1000));
+          addLog(
+            `Run summary: <strong>${escapeHtml(String(workflowMeta.tool_calls || 0))}</strong> tool calls, <strong>${escapeHtml(String(workflowMeta.total_tokens || 0))}</strong> LLM tokens, <strong>${escapeHtml(String(totalSeconds))}s</strong> total runtime.`,
+            'info'
+          );
+        }
+
+        if (workflowSteps.length) {
+          leadgenDebug.log('runLeadGen:steps', workflowSteps);
+          workflowSteps.forEach(step => {
             const toolName = step.tool || step.tool_name || step.type;
             if (toolName) {
               const detail = step.input?.query || step.arguments?.query || step.input?.company_name || step.arguments?.company_name || step.input?.website_url || '';
@@ -1560,7 +1613,8 @@
         }
 
         let leads = [];
-        if (Array.isArray(data.json?.leads)) leads = data.json.leads;
+        if (Array.isArray(workflowState?.outputs?.enriched_leads)) leads = workflowState.outputs.enriched_leads;
+        else if (Array.isArray(data.json?.leads)) leads = data.json.leads;
         else if (Array.isArray(data.json)) leads = data.json;
         leadgenDebug.log('runLeadGen:leads_after_json_pick', { count: leads.length, preview: leads.slice(0, 3) });
         if (!leads.length) leads = extractLeadsFromText(rawText);

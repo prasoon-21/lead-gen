@@ -12,7 +12,7 @@ allowed_tools:
 memory_window: 12
 max_steps: 15
 max_tool_calls: 12
-max_runtime_seconds: 180
+max_runtime_seconds: 300
 default_context:
   domain: market_intelligence
   output_format: markdown

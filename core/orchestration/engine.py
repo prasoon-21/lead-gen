@@ -109,6 +109,10 @@ class WorkflowEngine:
         visited_steps = 0
         max_steps = max(20, len(spec.nodes) * 4)
         started = time.perf_counter()
+        aggregated_tool_calls = 0
+        aggregated_input_tokens = 0
+        aggregated_output_tokens = 0
+        node_summaries = []
 
         while current_node_id and visited_steps < max_steps:
             visited_steps += 1
@@ -128,6 +132,22 @@ class WorkflowEngine:
             node_output = await self._run_node(node, state, trace_id)
             set_path(state, f"nodes.{node.node_id}.output", node_output)
             map_outputs(state, node_output if isinstance(node_output, dict) else {"result": node_output}, node.output_map)
+            if isinstance(node_output, dict):
+                node_meta = node_output.get("metadata", {}) if isinstance(node_output.get("metadata"), dict) else {}
+                aggregated_tool_calls += int(node_meta.get("tool_calls", 0) or 0)
+                aggregated_input_tokens += int(node_meta.get("input_tokens", 0) or 0)
+                aggregated_output_tokens += int(node_meta.get("output_tokens", 0) or 0)
+                node_summaries.append(
+                    {
+                        "node_id": node.node_id,
+                        "node_type": node.node_type,
+                        "tool_calls": int(node_meta.get("tool_calls", 0) or 0),
+                        "input_tokens": int(node_meta.get("input_tokens", 0) or 0),
+                        "output_tokens": int(node_meta.get("output_tokens", 0) or 0),
+                        "latency_ms": float(node_meta.get("latency_ms", 0) or 0),
+                        "manual_flow": bool(node_meta.get("manual_flow", False)),
+                    }
+                )
             self._log(
                 trace_id,
                 "workflow_node_end",
@@ -149,5 +169,10 @@ class WorkflowEngine:
             "metadata": {
                 "steps": visited_steps,
                 "latency_ms": (time.perf_counter() - started) * 1000,
+                "tool_calls": aggregated_tool_calls,
+                "input_tokens": aggregated_input_tokens,
+                "output_tokens": aggregated_output_tokens,
+                "total_tokens": aggregated_input_tokens + aggregated_output_tokens,
+                "node_summaries": node_summaries,
             },
         }

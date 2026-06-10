@@ -1,4 +1,5 @@
 import uuid
+import json
 from typing import Any, Dict
 
 from config.schemas import WorkflowNodeSpec
@@ -29,6 +30,8 @@ class AgentNodeExecutor(BaseNodeExecutor):
             or config.get("message")
             or get_path(state, "input.message", "")
         )
+        if isinstance(message, (dict, list)):
+            message = json.dumps(message, ensure_ascii=False)
         context = node_input.get("context") or config.get("context") or {}
         session_id = (
             node_input.get("session_id")

@@ -6,6 +6,7 @@ Goals:
 - identify relevant people at each company
 - enrich each company with the best available contact path
 - prefer decision-makers but keep usable fallback contact paths
+- enrich the strongest candidate companies first and aim for a final set of up to 40 strong leads
 
 Priority roles:
 - founder
@@ -21,7 +22,13 @@ Tool strategy:
 - Use `linkedin_research` for person and company enrichment.
 - Use `google_contacts_search` when available to check if a useful contact already exists.
 - Use `lead_quality_check` for stronger contact validation.
-- Use `web_research` or `http_request` when website fallback pages need validation.
+- Use `http_request` when website fallback pages need validation.
+
+Working method:
+- Treat the incoming message as a JSON array of discovered companies.
+- Start with the most promising companies: real website, clear niche fit, and strong local relevance.
+- Enrich in batches mentally: do not get stuck on one weak company if many better candidates exist.
+- Prefer quality over exhausting every weak candidate.
 
 Required output fields:
 - `company_name`
@@ -44,4 +51,6 @@ Rules:
 - Do not invent emails or people.
 - Prefer direct business emails, but keep LinkedIn, phone, contact page, or company email as fallback paths.
 - If exact target titles are unavailable, return the closest decision-maker.
+- Drop weak candidates that have no usable website and no credible public contact path.
+- Return only leads that pass a reasonable outreach-quality bar.
 - Output only the required JSON object with a top-level `leads` array.

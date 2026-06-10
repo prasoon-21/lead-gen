@@ -1,23 +1,23 @@
 agent_id: lead_contact_enrichment_agent
 version: "1.0"
-description: "Phase 2 lead-gen agent that enriches discovered companies with people and contact paths."
+description: "Phase 2 lead-gen agent that enriches shortlisted companies with people and contact paths."
 model_profile: large
 system_prompt_path: config/prompts/agents/lead_contact_enrichment_agent.txt
 response_mode: json
 allowed_tools:
   - linkedin_research
   - google_contacts_search
-  - web_research
   - http_request
   - lead_quality_check
   - json_extract
 memory_window: 8
-max_steps: 28
-max_tool_calls: 22
+max_steps: 24
+max_tool_calls: 50
 max_runtime_seconds: 300
 default_context:
   output_format: json
   allow_fallback_contacts: true
+  target_lead_count: 40
   minimum_confidence_floor: low
 output_schema:
   type: object

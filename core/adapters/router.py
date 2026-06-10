@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from core.adapters.base import BaseLLMAdapter, LLMResponse
 from core.adapters.gemini import GeminiAdapter
+from core.adapters.xai import XAIAdapter
 
 logger = logging.getLogger("core.llm.router")
 
@@ -42,6 +43,18 @@ def _should_fallback(exc: Exception) -> bool:
         "not implemented",
         "finish_reason",
         "no text",
+        "credits",
+        "license",
+        "billing",
+        "payment",
+        "permission-denied",
+        "permission denied",
+        "403",
+        "401",
+        "unauthorized",
+        "forbidden",
+        "auth",
+        "authentication",
     ]
     return any(signal in message for signal in signals)
 
@@ -189,6 +202,18 @@ def _build_openrouter_adapter(
     )
 
 
+def _build_xai_adapter(
+    model_name: Optional[str] = None,
+    embedding_model: Optional[str] = None,
+) -> Optional[BaseLLMAdapter]:
+    api_key = os.getenv("XAI_API_KEY")
+    if not api_key:
+        return None
+    model_name = model_name or os.getenv("XAI_MODEL", XAIAdapter.DEFAULT_MODEL)
+    embedding_model = embedding_model or os.getenv("XAI_EMBEDDING_MODEL", "")
+    return XAIAdapter(api_key=api_key, model_name=model_name, embedding_model=embedding_model)
+
+
 def _build_anthropic_adapter(
     model_name: Optional[str] = None,
 ) -> Optional[BaseLLMAdapter]:
@@ -210,7 +235,7 @@ def build_adapter_from_env(
     model_override: Optional[str] = None,
     embedding_model_override: Optional[str] = None,
 ) -> Optional[BaseLLMAdapter]:
-    primary = _normalize_provider(provider_override or os.getenv("LLM_PROVIDER", "gemini"))
+    primary = _normalize_provider(provider_override or os.getenv("LLM_PROVIDER", "xai"))
     fallbacks = _parse_provider_list(os.getenv("LLM_FALLBACKS", ""))
     providers = [primary] + [p for p in fallbacks if p and p != primary]
 
@@ -229,6 +254,11 @@ def build_adapter_from_env(
             )
         elif provider == "openrouter":
             adapter = _build_openrouter_adapter(
+                model_name=model_override if provider == primary else None,
+                embedding_model=embedding_model_override if provider == primary else None,
+            )
+        elif provider == "xai":
+            adapter = _build_xai_adapter(
                 model_name=model_override if provider == primary else None,
                 embedding_model=embedding_model_override if provider == primary else None,
             )

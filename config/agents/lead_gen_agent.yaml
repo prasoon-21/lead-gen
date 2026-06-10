@@ -12,9 +12,9 @@ allowed_tools:
   - lead_quality_check
   - json_extract
 memory_window: 10
-max_steps: 18
+max_steps: 50
 max_tool_calls: 16
-max_runtime_seconds: 180
+max_runtime_seconds: 300
 default_context:
   domain: sales_intelligence
   output_format: json

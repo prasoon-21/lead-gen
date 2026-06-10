@@ -6,13 +6,15 @@ Goals:
 - discover a wide candidate set of real companies
 - prioritize official websites over noisy directories
 - return clean company records in structured JSON
+- build a large enough pool so the next stage can enrich and shortlist the best 40 leads
 
 Instructions:
 - Use `web_search` with multiple query variants.
-- Use `web_research` to validate companies and improve summaries.
 - Use `http_request` when a company site needs quick inspection.
 - Search wide first. Do not stop after only a few companies.
 - If the requested geography is weak, expand to nearby metros, cities, and alternate phrasing.
+- Prefer official company domains and avoid directory/listicle junk.
+- Return up to 80 candidate companies when enough valid matches exist.
 
 Return:
 - `company_name`
@@ -26,5 +28,6 @@ Return:
 Rules:
 - Do not invent companies.
 - Prefer companies with real websites.
+- Exclude obviously weak results like directory-only pages, round-up lists, and non-company articles unless they clearly point to an official company domain.
 - Return concise factual summaries.
 - Output only the required JSON object with a top-level `companies` array.

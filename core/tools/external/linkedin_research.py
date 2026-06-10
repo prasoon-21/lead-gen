@@ -219,8 +219,7 @@ class LinkedInResearchTool(BaseTool):
     async def _fetch_page(self, client: httpx.AsyncClient, url: str) -> Optional[Dict[str, Any]]:
         try:
             response = await client.get(url, follow_redirects=True)
-            if response.status_code >= 400:
-                return None
+            response.raise_for_status()
             html = response.text
             title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", html)
             return {
@@ -229,7 +228,11 @@ class LinkedInResearchTool(BaseTool):
                 "html": html,
                 "text": self._strip_html(html)[:5000],
             }
-        except Exception:
+        except httpx.RequestError as exc:
+            logger.warning(f"HTTP request failed for {url}: {exc}")
+            return None
+        except Exception as exc:
+            logger.error(f"Unexpected error fetching {url}: {exc}")
             return None
 
     async def _discover_website_contact_paths(self, website_url: str) -> Dict[str, Any]:
@@ -248,29 +251,33 @@ class LinkedInResearchTool(BaseTool):
         pages: List[Dict[str, Any]] = []
         seen_urls = set()
 
-        async with httpx.AsyncClient(timeout=12) as client:
-            homepage = await self._fetch_page(client, normalized_site)
-            homepage_html = ""
-            if homepage:
-                pages.append(homepage)
-                seen_urls.add(homepage["url"].rstrip("/"))
-                homepage_html = homepage["html"]
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                homepage = await self._fetch_page(client, normalized_site)
+                homepage_html = ""
+                if homepage:
+                    pages.append(homepage)
+                    seen_urls.add(homepage["url"].rstrip("/"))
+                    homepage_html = homepage["html"]
 
-            for discovered in self._discover_links(normalized_site, homepage_html):
-                if discovered.rstrip("/") not in seen_urls:
-                    page_candidates.append(discovered)
+                for discovered in self._discover_links(normalized_site, homepage_html):
+                    if discovered.rstrip("/") not in seen_urls:
+                        page_candidates.append(discovered)
 
-            for candidate in page_candidates:
-                key = candidate.rstrip("/")
-                if key in seen_urls:
-                    continue
-                page = await self._fetch_page(client, candidate)
-                if not page:
-                    continue
-                seen_urls.add(key)
-                pages.append(page)
-                if len(pages) >= 6:
-                    break
+                for candidate in page_candidates:
+                    key = candidate.rstrip("/")
+                    if key in seen_urls:
+                        continue
+                    page = await self._fetch_page(client, candidate)
+                    if not page:
+                        continue
+                    seen_urls.add(key)
+                    pages.append(page)
+                    if len(pages) >= 6:
+                        break
+        except Exception as exc:
+            logger.error(f"Website contact discovery failed for {website_url}: {exc}")
+            return {}
 
         emails: List[str] = []
         phones: List[str] = []
@@ -355,6 +362,8 @@ class LinkedInResearchTool(BaseTool):
         target_roles = [self._clean_text(item).lower() for item in arguments.get("target_roles") or [] if self._clean_text(item)]
         allow_fallback_contact_paths = bool(arguments.get("allow_fallback_contact_paths", True))
 
+        logger.info(f"Running LinkedIn research with arguments: {arguments}")
+
         if not url:
             return {"error": "LinkedIn URL is required"}
 
@@ -370,6 +379,7 @@ class LinkedInResearchTool(BaseTool):
         if os.getenv("VERCEL") == "1":
             session_path = os.path.join("/tmp", "linkedin_session.json")
         if not os.path.exists(session_path):
+            logger.error("LinkedIn session file not found at %s", session_path)
             return {
                 "error": "LinkedIn session file not found. Please use the LinkedIn Session Sync widget to authenticate."
             }
@@ -378,8 +388,10 @@ class LinkedInResearchTool(BaseTool):
             cookies = self._load_session(session_path)
             li_at = cookies.get("li_at", "")
             if not li_at:
+                logger.error("No li_at cookie found in session file.")
                 return {"error": "No li_at cookie found in session. Please re-sync via the LinkedIn Session Sync widget."}
         except Exception as exc:
+            logger.error(f"Failed to load LinkedIn session: {exc}", exc_info=True)
             return {"error": f"Failed to load session: {exc}"}
 
         try:
@@ -424,7 +436,7 @@ class LinkedInResearchTool(BaseTool):
                     company_name_hint=(arguments.get("company_name") or context.state.get("company_name") or ""),
                 )
         except Exception as exc:
-            logger.error("LinkedIn scraping failed: %s", exc)
+            logger.error("LinkedIn scraping failed: %s", exc, exc_info=True)
             return {"error": f"Scraping failed: {exc}"}
 
     async def _scrape_person(
@@ -450,55 +462,56 @@ class LinkedInResearchTool(BaseTool):
         profile_url = f"https://www.linkedin.com/voyager/api/identity/profiles/{profile_id}"
         try:
             resp = await client.get(profile_url, headers=headers)
-            logger.info("Profile API status: %s", resp.status_code)
+            logger.info("Profile API status for %s: %s", profile_id, resp.status_code)
+            resp.raise_for_status()
 
-            if resp.status_code in (401, 403, 302):
-                return {
-                    "error": (
-                        "LinkedIn session is not authenticated. Your li_at cookie may have expired. "
-                        "Please log into LinkedIn on your browser, copy the fresh li_at cookie, "
-                        "and paste it into the LinkedIn Session Sync widget."
-                    )
-                }
-            if resp.status_code == 404:
+            data = resp.json()
+            full_name = f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
+            headline = data.get("headline", "") or ""
+            result["full_name"] = full_name
+            result["contact_person_name"] = full_name
+            result["founder_name"] = full_name
+            result["contact_person_title"] = headline
+            result["headline"] = headline
+            result["summary"] = data.get("summary", "") or ""
+            result["location"] = data.get("geoLocationName", "") or data.get("geoCountryName", "")
+
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                logger.error("LinkedIn session is not authenticated (li_at expired?).")
+                return {"error": "LinkedIn session is not authenticated. Your li_at cookie may have expired. Please re-sync."}
+            if exc.response.status_code == 404:
                 return {"error": f"Profile not found: {profile_id}"}
-            if resp.status_code == 410:
+            logger.warning("HTTP error fetching profile %s: %s", profile_id, exc)
+            if exc.response.status_code == 410:
                 result.update(await self._scrape_person_alternate(client, headers, url, profile_id))
-            elif resp.status_code == 200:
-                data = resp.json()
-                full_name = f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
-                headline = data.get("headline", "") or ""
-                result["full_name"] = full_name
-                result["contact_person_name"] = full_name
-                result["founder_name"] = full_name
-                result["contact_person_title"] = headline
-                result["headline"] = headline
-                result["summary"] = data.get("summary", "") or ""
-                result["location"] = data.get("geoLocationName", "") or data.get("geoCountryName", "")
+
         except Exception as exc:
-            logger.warning("Profile fetch failed: %s", exc)
+            logger.error("Profile fetch for %s failed: %s", profile_id, exc, exc_info=True)
+
 
         contact_url = f"https://www.linkedin.com/voyager/api/identity/profiles/{profile_id}/profileContactInfo"
         try:
             resp2 = await client.get(contact_url, headers=headers)
-            logger.info("Contact API status: %s", resp2.status_code)
-            if resp2.status_code == 200:
-                cdata = resp2.json()
-                email_addr = cdata.get("emailAddress", "") or ""
-                if email_addr:
-                    result["contact_email"] = email_addr
+            logger.info("Contact API status for %s: %s", profile_id, resp2.status_code)
+            resp2.raise_for_status()
+            
+            cdata = resp2.json()
+            email_addr = cdata.get("emailAddress", "") or ""
+            if email_addr:
+                result["contact_email"] = email_addr
 
-                phone_nums = cdata.get("phoneNumbers", []) or []
-                if phone_nums:
-                    result["contact_phone"] = phone_nums[0].get("number", "") or ""
+            phone_nums = cdata.get("phoneNumbers", []) or []
+            if phone_nums:
+                result["contact_phone"] = phone_nums[0].get("number", "") or ""
 
-                websites = cdata.get("websites", []) or []
-                if websites and not website_url:
-                    website_url = websites[0].get("url", "") or ""
-                if website_url:
-                    result["company_website"] = website_url
+            websites = cdata.get("websites", []) or []
+            if websites and not website_url:
+                website_url = websites[0].get("url", "") or ""
+            if website_url:
+                result["company_website"] = website_url
         except Exception as exc:
-            logger.warning("Contact info fetch failed: %s", exc)
+            logger.warning("Contact info fetch for %s failed: %s", profile_id, exc)
 
         role_data = self._role_priority(result.get("contact_person_title", ""), target_roles)
         result.update(role_data)
@@ -560,29 +573,31 @@ class LinkedInResearchTool(BaseTool):
         )
         try:
             resp = await client.get(norm_url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                full_name = f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
-                result["full_name"] = full_name
-                result["contact_person_name"] = full_name
-                result["founder_name"] = full_name
-                result["contact_person_title"] = data.get("headline", "") or ""
-                result["headline"] = data.get("headline", "") or ""
-                result["location"] = data.get("geoLocationName", "") or ""
+            resp.raise_for_status()
+            
+            data = resp.json()
+            full_name = f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
+            result["full_name"] = full_name
+            result["contact_person_name"] = full_name
+            result["founder_name"] = full_name
+            result["contact_person_title"] = data.get("headline", "") or ""
+            result["headline"] = data.get("headline", "") or ""
+            result["location"] = data.get("geoLocationName", "") or ""
         except Exception as exc:
-            logger.warning("Alternate profile fetch failed: %s", exc)
+            logger.warning("Alternate profile fetch for %s failed: %s", profile_id, exc)
 
         contact_url = f"https://www.linkedin.com/voyager/api/identity/profiles/{profile_id}/profileContactInfo"
         try:
             resp2 = await client.get(contact_url, headers=headers)
-            if resp2.status_code == 200:
-                cdata = resp2.json()
-                result["contact_email"] = cdata.get("emailAddress", "") or ""
-                phones = cdata.get("phoneNumbers", []) or []
-                if phones:
-                    result["contact_phone"] = phones[0].get("number", "") or ""
+            resp2.raise_for_status()
+            
+            cdata = resp2.json()
+            result["contact_email"] = cdata.get("emailAddress", "") or ""
+            phones = cdata.get("phoneNumbers", []) or []
+            if phones:
+                result["contact_phone"] = phones[0].get("number", "") or ""
         except Exception as exc:
-            logger.warning("Contact info fetch failed: %s", exc)
+            logger.warning("Alternate contact info fetch for %s failed: %s", profile_id, exc)
 
         return result
 
@@ -611,32 +626,36 @@ class LinkedInResearchTool(BaseTool):
         company_url = f"https://www.linkedin.com/voyager/api/organization/companies?q=universalName&universalName={company_id}"
         try:
             resp = await client.get(company_url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                elements = data.get("elements", []) or []
-                if elements:
-                    company = elements[0]
-                    result["company_name"] = company.get("name", "") or result.get("company_name", "")
-                    result["tagline"] = company.get("tagline", "") or ""
-                    result["description"] = company.get("description", "") or ""
-                    result["value_proposition"] = company.get("tagline", "") or company.get("description", "") or ""
-                    result["industry"] = company.get("industries", [{}])[0].get("localizedName", "") if company.get("industries") else ""
-                    result["company_size"] = str(company.get("staffCountRange", {}).get("start", "")) or ""
-                    result["location"] = company.get("headquarter", {}).get("city", "") or ""
-                    if company.get("companyPageUrl"):
-                        result["linkedin_company_url"] = company.get("companyPageUrl")
-                    website_url = (
-                        website_url
-                        or company.get("companyWebsite", "")
-                        or company.get("websiteUrl", "")
-                        or company.get("url", "")
-                    )
-                    if website_url:
-                        result["company_website"] = website_url
-            elif resp.status_code in (401, 403):
+            resp.raise_for_status()
+            
+            data = resp.json()
+            elements = data.get("elements", []) or []
+            if elements:
+                company = elements[0]
+                result["company_name"] = company.get("name", "") or result.get("company_name", "")
+                result["tagline"] = company.get("tagline", "") or ""
+                result["description"] = company.get("description", "") or ""
+                result["value_proposition"] = company.get("tagline", "") or company.get("description", "") or ""
+                result["industry"] = company.get("industries", [{}])[0].get("localizedName", "") if company.get("industries") else ""
+                result["company_size"] = str(company.get("staffCountRange", {}).get("start", "")) or ""
+                result["location"] = company.get("headquarter", {}).get("city", "") or ""
+                if company.get("companyPageUrl"):
+                    result["linkedin_company_url"] = company.get("companyPageUrl")
+                website_url = (
+                    website_url
+                    or company.get("companyWebsite", "")
+                    or company.get("websiteUrl", "")
+                    or company.get("url", "")
+                )
+                if website_url:
+                    result["company_website"] = website_url
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                logger.error("LinkedIn session is not authenticated (li_at expired?).")
                 return {"error": "LinkedIn session is not authenticated. Please re-sync your li_at cookie."}
+            logger.warning("HTTP error fetching company %s: %s", company_id, exc)
         except Exception as exc:
-            logger.warning("Company fetch failed: %s", exc)
+            logger.error("Company fetch for %s failed: %s", company_id, exc, exc_info=True)
 
         website_fallback: Dict[str, Any] = {}
         if allow_fallback_contact_paths and website_url:

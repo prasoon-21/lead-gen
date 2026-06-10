@@ -1,14 +1,14 @@
 profiles:
   small:
-    provider: openrouter
-    model: openrouter/auto
+    provider: xai
+    model: grok-4.3
     temperature: 0.2
     max_tokens: 8192
-    embedding_model: text-embedding-3-small
+    embedding_model: ""
 
   large:
-    provider: openrouter
-    model: openrouter/auto
+    provider: xai
+    model: grok-4.3
     temperature: 0.5
-    max_tokens: 4096
-    embedding_model: text-embedding-3-small
+    max_tokens: 8192
+    embedding_model: ""

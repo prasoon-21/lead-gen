@@ -15,6 +15,7 @@ nodes:
     output_map:
       outputs.discovery_text: text
       outputs.discovery_json: json
+      outputs.discovery_companies: json.companies
       outputs.discovery_steps: steps
     transitions:
       - to: enrich_contacts
@@ -25,7 +26,7 @@ nodes:
     config:
       agent_id: lead_contact_enrichment_agent
     input_map:
-      message: outputs.discovery_text
+      message: outputs.discovery_companies
       context: input.context
       session_id: session_id
     output_map:

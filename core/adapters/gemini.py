@@ -129,6 +129,14 @@ class GeminiAdapter(BaseLLMAdapter):
             )
 
         text = self._extract_text(response)
+        self._set_last_usage(
+            mode="generate",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
+            model=self.model_name,
+            extra={"response_mime_type": response_mime_type or "text/plain"},
+        )
         return LLMResponse(
             text=text,
             input_tokens=input_tokens,
@@ -186,6 +194,14 @@ class GeminiAdapter(BaseLLMAdapter):
             )
 
         text = self._extract_text(response)
+        self._set_last_usage(
+            mode="vision",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
+            model=self.model_name,
+            extra={"image_count": len(images or [])},
+        )
         return LLMResponse(
             text=text,
             input_tokens=input_tokens,
@@ -216,7 +232,10 @@ class GeminiAdapter(BaseLLMAdapter):
 
         # Attempt 1: Direct structural parse
         try:
-            return json.loads(text)
+            parsed = json.loads(text)
+            self.last_usage["mode"] = "generate_json"
+            self.last_usage["parse_status"] = "direct_json"
+            return parsed
         except json.JSONDecodeError:
             pass
 
@@ -237,14 +256,22 @@ class GeminiAdapter(BaseLLMAdapter):
                         if depth == 0:
                             candidate = text[start_pos : i + 1]
                             try:
-                                return safe_json_loads(candidate)
+                                parsed = safe_json_loads(candidate)
+                                self.last_usage["mode"] = "generate_json"
+                                self.last_usage["parse_status"] = "extracted_json"
+                                return parsed
                             except Exception:
                                 continue
 
-            return safe_json_loads(text)
+            parsed = safe_json_loads(text)
+            self.last_usage["mode"] = "generate_json"
+            self.last_usage["parse_status"] = "repaired_json"
+            return parsed
         except Exception:
             pass
 
+        self.last_usage["mode"] = "generate_json"
+        self.last_usage["parse_status"] = "malformed_json"
         return {"error": "malformed_json", "raw": text[:200]}
 
     async def embed(self, text: str) -> List[float]:

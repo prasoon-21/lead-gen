@@ -1,10 +1,13 @@
 from typing import Any, Dict, List, Optional
 import logging
+import time
+import uuid
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from api.state import get_state
+from core.services.production_lead_pipeline import ProductionLeadPipeline
 
 
 router = APIRouter()
@@ -165,8 +168,16 @@ async def run_workflow(request: WorkflowRunRequest):
             "step": 0,
             "tool_name": "-",
             "status": "received",
+            "payload": {
+                "workflow_id": request.workflow_id,
+                "session_id": request.session_id,
+                "payload": request.payload,
+            },
         },
     )
+
+    if request.workflow_id == "lead_generation_directory_pipeline":
+        return await _run_production_lead_workflow(request)
 
     try:
         result = await state.workflow_engine.run(
@@ -177,8 +188,36 @@ async def run_workflow(request: WorkflowRunRequest):
     except FileNotFoundError:
         raise HTTPException(status_code=400, detail=f"Unknown workflow_id: {request.workflow_id}")
     except ValueError as exc:
+        runtime_logger.exception(
+            "workflow_api_validation_error",
+            extra={
+                "event": "workflow_api_validation_error",
+                "trace_id": "-",
+                "session_id": request.session_id or "-",
+                "agent_id": "-",
+                "workflow_id": request.workflow_id,
+                "step": 0,
+                "tool_name": "-",
+                "status": type(exc).__name__,
+                "payload": {"error": str(exc), "payload": request.payload},
+            },
+        )
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
+        runtime_logger.exception(
+            "workflow_api_error",
+            extra={
+                "event": "workflow_api_error",
+                "trace_id": "-",
+                "session_id": request.session_id or "-",
+                "agent_id": "-",
+                "workflow_id": request.workflow_id,
+                "step": 0,
+                "tool_name": "-",
+                "status": type(exc).__name__,
+                "payload": {"error": str(exc), "payload": request.payload},
+            },
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
     return WorkflowRunResponse(
@@ -188,4 +227,62 @@ async def run_workflow(request: WorkflowRunRequest):
         session_id=result.get("session_id"),
         state=result.get("state", {}),
         metadata=result.get("metadata", {}),
+    )
+
+
+async def _run_production_lead_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
+    started = time.perf_counter()
+    payload = request.payload or {}
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    message = str(payload.get("message") or "")
+    industry = str(context.get("industry") or "").strip()
+    location = str(context.get("location") or "").strip()
+    try:
+        target_count = int(context.get("target_lead_count") or 15)
+    except (TypeError, ValueError):
+        target_count = 15
+    target_count = max(1, min(target_count, 20))
+
+    pipeline = ProductionLeadPipeline()
+    result = await pipeline.run(
+        industry=industry,
+        location=location,
+        seed_query=message,
+        target_count=target_count,
+    )
+    leads = result.get("leads") or []
+    steps = result.get("steps") or []
+    session_id = request.session_id or f"WSESS_{uuid.uuid4()}"
+    trace_id = f"WTRACE_{uuid.uuid4()}"
+    metadata = {
+        **(result.get("metadata") or {}),
+        "completed": True,
+        "production_pipeline": True,
+        "tool_calls": len(steps),
+        "latency_ms": (time.perf_counter() - started) * 1000,
+        "total_tokens": 0,
+    }
+    workflow_state = {
+        "workflow": {
+            "workflow_id": request.workflow_id,
+            "completed": True,
+            "fast_path": "production_lead_pipeline",
+        },
+        "inputs": payload,
+        "outputs": {
+            "enriched_leads": leads,
+            "quality_steps": steps,
+            "discovery_steps": steps[:1],
+            "directory_steps": steps[1:2],
+            "validation_steps": steps[2:3],
+            "enrichment_steps": steps[3:],
+        },
+    }
+    return WorkflowRunResponse(
+        success=True,
+        workflow_id=request.workflow_id,
+        trace_id=trace_id,
+        session_id=session_id,
+        state=workflow_state,
+        metadata=metadata,
     )

@@ -5,7 +5,6 @@ model_profile: large
 system_prompt_path: config/prompts/agents/research_assistant.txt
 response_mode: text
 allowed_tools:
-  - web_research
   - web_search
   - http_request
   - json_extract

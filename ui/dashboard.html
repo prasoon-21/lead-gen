@@ -687,6 +687,27 @@ function removeTyping(id) {
   document.getElementById(id)?.remove()
 }
 
+function workflowFailureBanner(data) {
+  const failure = data?.metadata?.pipeline_failure || data?.state?.workflow?.fail_fast || null
+  if (!failure?.reason) return ''
+  const stage = failure.stage || 'unknown_stage'
+  const metric = failure.metric || 'unknown_metric'
+  return `<div class="rounded-lg border border-red-900 bg-[#1f0f0f] px-3 py-2.5">
+    <div class="text-xs text-red-400 uppercase tracking-wider font-medium">Pipeline stopped early</div>
+    <div class="text-sm text-red-200 mt-1">${escHtml(failure.reason)}</div>
+    <div class="text-xs text-red-500 mt-1 font-mono">stage=${escHtml(stage)} · metric=${escHtml(metric)}</div>
+  </div>`
+}
+
+function workflowFallbackBanner(data) {
+  const fallback = data?.metadata?.pipeline_fallback || data?.metadata?.pipeline_observability?.fallback_company_discovery || null
+  if (!fallback?.activated) return ''
+  return `<div class="rounded-lg border border-amber-900 bg-[#1f1800] px-3 py-2.5">
+    <div class="text-xs text-amber-400 uppercase tracking-wider font-medium">Fallback used</div>
+    <div class="text-sm text-amber-200 mt-1">Direct company discovery resumed the run after ${escHtml(fallback.from_stage || 'unknown_stage')} and recovered ${escHtml(String(fallback.companies_found || 0))} company candidates.</div>
+  </div>`
+}
+
 function appendWorkflowBubble(p, data) {
   const c   = document.getElementById(`${p}-messages`)
   const d   = document.createElement('div')
@@ -708,6 +729,8 @@ function appendWorkflowBubble(p, data) {
 
   d.innerHTML = `
     <div class="bubble-agent px-4 py-3 max-w-[88%] space-y-2">
+      ${workflowFailureBanner(data)}
+      ${workflowFallbackBanner(data)}
       ${mainText ? `<pre class="text-sm text-[#e2e8f0] leading-relaxed">${escHtml(mainText)}</pre>` : ''}
       ${Object.keys(outputs).filter(k=>!['agent_response','response','answer','text','summary'].includes(k)).length ? `
         <button onclick="toggleEl('${otherId}')" class="text-xs text-[#64748b] hover:text-[#818cf8] transition-colors mt-1">Other outputs ▸</button>
@@ -780,6 +803,8 @@ function renderJsonResult(data, type) {
   let body = ''
   if (type==='workflow') {
     const outs = data.state?.outputs||{}
+    body += workflowFailureBanner(data)
+    body += workflowFallbackBanner(data)
     if (Object.keys(outs).length) {
       body += `<div class="card rounded-xl p-4"><div class="text-xs text-[#64748b] uppercase tracking-wider mb-3">Outputs</div><div class="space-y-3">`
       for (const [k,v] of Object.entries(outs)) {

@@ -1,8 +1,14 @@
 import math
+import os
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+from core.services.lead_discovery_policy import (
+    DEFAULT_TAVILY_SEARCH_DEPTH,
+    clamp_web_search_max_results,
+)
 from core.tools.base import BaseTool, ToolContext, ToolExecutionError
+from core.tools.external.html_search_fallback import HTMLSearchFallbackClient
 from core.tools.external.tavily_client import TavilyClient
 
 
@@ -57,17 +63,13 @@ class WebSearchTool(BaseTool):
         "www.crunchbase.com",
         "zoominfo.com",
         "www.zoominfo.com",
-        "clutch.co",
-        "www.clutch.co",
-        "goodfirms.co",
-        "www.goodfirms.co",
-        "yelp.com",
-        "www.yelp.com",
-        "builtin.com",
-        "www.builtin.com",
-        "wellfound.com",
-        "www.wellfound.com",
     )
+    _fallback_codes = {
+        "missing_api_key",
+        "tavily_error",
+        "tavily_quota_exceeded",
+        "invalid_api_key",
+    }
 
     @staticmethod
     def _normalize_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -106,7 +108,7 @@ class WebSearchTool(BaseTool):
         for variant in explicit_variants:
             add_variant(str(variant))
 
-        expand_queries = bool(arguments.get("expand_queries", True))
+        expand_queries = bool(arguments.get("expand_queries", False))
         if not expand_queries:
             return variants[: self._variant_limit]
 
@@ -160,44 +162,112 @@ class WebSearchTool(BaseTool):
             boost += 1
         return boost
 
+    async def _search_variant(
+        self,
+        variant: str,
+        payload: Dict[str, Any],
+        tavily_client: TavilyClient | None,
+        fallback_client: HTMLSearchFallbackClient,
+        providers_used: List[str],
+        warnings: List[str],
+    ) -> Dict[str, Any]:
+        tavily_error: ToolExecutionError | None = None
+
+        if tavily_client is not None:
+            try:
+                result = await tavily_client.search(payload)
+                providers_used.append("tavily")
+                return result
+            except ToolExecutionError as exc:
+                tavily_error = exc
+                if exc.code not in self._fallback_codes:
+                    raise
+                warnings.append(
+                    f"Tavily search failed for '{variant}': "
+                    f"{exc.details.get('message') or str(exc)}"
+                )
+
+        try:
+            result = await fallback_client.search(payload)
+            providers_used.append(result.get("provider", HTMLSearchFallbackClient.PROVIDER_NAME))
+            return result
+        except ToolExecutionError as fallback_exc:
+            if tavily_error is not None:
+                raise ToolExecutionError(
+                    "Primary and fallback web search both failed",
+                    code="search_unavailable",
+                    details={
+                        "query": variant,
+                        "primary_error": {
+                            "code": tavily_error.code,
+                            "message": str(tavily_error),
+                            "details": tavily_error.details,
+                        },
+                        "fallback_error": {
+                            "code": fallback_exc.code,
+                            "message": str(fallback_exc),
+                            "details": fallback_exc.details,
+                        },
+                    },
+                )
+            raise
+
     async def run(self, arguments: Dict[str, Any], context: ToolContext) -> Dict[str, Any]:
         query = arguments.get("query", "").strip()
         if not query:
             raise ToolExecutionError("query is required", code="invalid_arguments")
 
         query_variants = self._build_query_variants(arguments, context)
-        max_results = int(arguments.get("max_results", 12))
+        max_results = clamp_web_search_max_results(arguments.get("max_results"))
         max_results_per_query = int(
             arguments.get("max_results_per_query")
-            or max(4, math.ceil(max_results / max(1, len(query_variants))))
+            or max(2, math.ceil(max_results / max(1, len(query_variants))))
         )
+        max_results_per_query = max(1, min(max_results_per_query, 4))
 
         payload_base = {
-            "search_depth": arguments.get("search_depth", "advanced"),
+            "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
             "include_domains": arguments.get("include_domains") or [],
             "exclude_domains": self._merged_excluded_domains(arguments.get("exclude_domains") or []),
             "include_raw_content": bool(arguments.get("include_raw_content", False)),
         }
 
-        client = TavilyClient()
+        tavily_client = TavilyClient() if os.getenv("TAVILY_API_KEY") else None
+        fallback_client = HTMLSearchFallbackClient()
         aggregated: List[Dict[str, Any]] = []
         answer_fragments: List[str] = []
         response_times: List[Any] = []
+        providers_used: List[str] = []
+        warnings: List[str] = []
+        last_error: ToolExecutionError | None = None
 
         for variant in query_variants:
-            raw = await client.search(
-                {
-                    "query": variant,
-                    "max_results": max_results_per_query,
-                    **payload_base,
-                }
-            )
+            try:
+                raw = await self._search_variant(
+                    variant=variant,
+                    payload={
+                        "query": variant,
+                        "max_results": max_results_per_query,
+                        **payload_base,
+                    },
+                    tavily_client=tavily_client,
+                    fallback_client=fallback_client,
+                    providers_used=providers_used,
+                    warnings=warnings,
+                )
+            except ToolExecutionError as exc:
+                last_error = exc
+                warnings.append(f"Search variant failed for '{variant}': {str(exc)}")
+                continue
             normalized_results = self._normalize_results(raw.get("results", []))
             aggregated.extend(normalized_results)
             if raw.get("answer"):
                 answer_fragments.append(str(raw["answer"]))
             if raw.get("response_time") is not None:
                 response_times.append(raw.get("response_time"))
+
+        if not aggregated and last_error is not None:
+            raise last_error
 
         deduped: List[Dict[str, Any]] = []
         seen = set()
@@ -225,9 +295,14 @@ class WebSearchTool(BaseTool):
         return {
             "query": query,
             "queries_used": query_variants,
+            "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
+            "max_results": max_results,
             "answer": "\n".join(answer_fragments[:3]).strip() or None,
             "results": deduped,
             "count": len(deduped),
             "response_time": response_times,
             "domains": domains,
+            "providers_used": providers_used,
+            "fallback_used": any(provider != "tavily" for provider in providers_used),
+            "warnings": warnings,
         }

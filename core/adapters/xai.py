@@ -1,9 +1,7 @@
-from typing import Optional
-
-from core.adapters.openai import OpenAIAdapter
+from core.adapters.base import BaseLLMAdapter
 
 
-class XAIAdapter(OpenAIAdapter):
+class XAIAdapter(BaseLLMAdapter):
     DEFAULT_MODEL = "grok-4.3"
     BASE_URL = "https://api.x.ai/v1"
 
@@ -13,12 +11,6 @@ class XAIAdapter(OpenAIAdapter):
         model_name: str = DEFAULT_MODEL,
         embedding_model: str = "",
     ):
-        super().__init__(
-            api_key=api_key,
-            model_name=model_name,
-            embedding_model=embedding_model or "",
-            base_url=self.BASE_URL,
-        )
-
-    async def embed(self, text: str):
-        raise NotImplementedError("xAI embeddings are not configured; fall back to another provider for embeddings.")
+        super().__init__(api_key, model_name)
+        self.embedding_model = embedding_model
+        raise NotImplementedError("xAI support is disabled. Configure GOOGLE_API_KEY and use Gemini instead.")

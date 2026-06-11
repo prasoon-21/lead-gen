@@ -102,6 +102,7 @@ class AgentFactory:
                 "step": 0,
                 "tool_name": "-",
                 "status": f"caller={caller} source=directory",
+                "payload": {"message_preview": message[:400], "context": context or {}},
             },
         )
 
@@ -113,15 +114,32 @@ class AgentFactory:
             "agent_factory": self,
             "todo_store": self.todo_store,
         }
-        result = await kernel.run(
-            spec=spec,
-            session_id=session,
-            message=message,
-            context=context or {},
-            resources=resources,
-            system_prompt_text=system_prompt_text,
-            developer_prompt_text=developer_prompt_text,
-        )
+        try:
+            result = await kernel.run(
+                spec=spec,
+                session_id=session,
+                message=message,
+                context=context or {},
+                resources=resources,
+                system_prompt_text=system_prompt_text,
+                developer_prompt_text=developer_prompt_text,
+            )
+        except Exception as exc:
+            self._logger.exception(
+                "agent_run_error",
+                extra={
+                    "event": "agent_run_error",
+                    "trace_id": "-",
+                    "session_id": session,
+                    "agent_id": spec.agent_id,
+                    "workflow_id": "-",
+                    "step": 0,
+                    "tool_name": "-",
+                    "status": type(exc).__name__,
+                    "payload": {"message_preview": message[:400], "error": str(exc)},
+                },
+            )
+            raise
         self._logger.info(
             "agent_run_end",
             extra={
@@ -133,6 +151,7 @@ class AgentFactory:
                 "step": 0,
                 "tool_name": "-",
                 "status": f"completed={result.get('metadata', {}).get('completed', False)}",
+                "payload": result.get("metadata", {}),
             },
         )
         return result
@@ -171,6 +190,7 @@ class AgentFactory:
                 "step": 0,
                 "tool_name": "-",
                 "status": f"caller={caller}",
+                "payload": {"message_preview": message[:400], "context": context or {}},
             },
         )
         self._logger.info(
@@ -184,6 +204,10 @@ class AgentFactory:
                 "step": 0,
                 "tool_name": "-",
                 "status": f"system_path={spec.system_prompt_path or '-'} developer_path={spec.developer_prompt_path or '-'}",
+                "payload": {
+                    "system_prompt_path": spec.system_prompt_path or "",
+                    "developer_prompt_path": spec.developer_prompt_path or "",
+                },
             },
         )
 
@@ -195,15 +219,32 @@ class AgentFactory:
             "agent_factory": self,
             "todo_store": self.todo_store,
         }
-        result = await kernel.run(
-            spec=spec,
-            session_id=session,
-            message=message,
-            context=context or {},
-            resources=resources,
-            system_prompt_text=system_prompt_text,
-            developer_prompt_text=developer_prompt_text,
-        )
+        try:
+            result = await kernel.run(
+                spec=spec,
+                session_id=session,
+                message=message,
+                context=context or {},
+                resources=resources,
+                system_prompt_text=system_prompt_text,
+                developer_prompt_text=developer_prompt_text,
+            )
+        except Exception as exc:
+            self._logger.exception(
+                "agent_run_error",
+                extra={
+                    "event": "agent_run_error",
+                    "trace_id": "-",
+                    "session_id": session,
+                    "agent_id": spec.agent_id,
+                    "workflow_id": "-",
+                    "step": 0,
+                    "tool_name": "-",
+                    "status": type(exc).__name__,
+                    "payload": {"message_preview": message[:400], "error": str(exc)},
+                },
+            )
+            raise
         self._logger.info(
             "agent_run_end",
             extra={
@@ -215,6 +256,7 @@ class AgentFactory:
                 "step": 0,
                 "tool_name": "-",
                 "status": f"completed={result.get('metadata', {}).get('completed', False)} tool_calls={result.get('metadata', {}).get('tool_calls', 0)}",
+                "payload": result.get("metadata", {}),
             },
         )
         return result

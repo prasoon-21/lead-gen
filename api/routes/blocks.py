@@ -290,44 +290,23 @@ async def transcribe_audio(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    # Determine provider: explicit choice or auto-detect
-    use_provider = provider or "auto"
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    use_provider = (provider or "gemini").strip().lower()
     google_api_key = os.getenv("GOOGLE_API_KEY")
 
-    # Try OpenAI Whisper first (if available and not explicitly set to gemini)
-    if use_provider in ("auto", "openai", "whisper") and openai_api_key:
-        try:
-            openai_api_key = _sanitize_api_key(openai_api_key)
-            if openai_api_key:
-                from openai import OpenAI
-                client = OpenAI(api_key=openai_api_key)
-                model_name = model or os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
-                transcript = client.audio.transcriptions.create(
-                    model=model_name,
-                    file=(file.filename or "audio", file_bytes, file.content_type or "application/octet-stream"),
-                    language=language,
-                    prompt=prompt,
-                )
-                text = getattr(transcript, "text", None) or str(transcript)
-                return TranscribeResponse(text=text, model=model_name, language=language)
-        except ImportError:
-            pass  # Fall through to Gemini
-        except Exception as e:
-            if use_provider in ("openai", "whisper"):
-                raise HTTPException(status_code=500, detail=f"OpenAI transcription failed: {str(e)}")
-            # Fall through to Gemini on auto
+    if use_provider != "gemini":
+        raise HTTPException(
+            status_code=400,
+            detail="Only the Gemini transcription provider is enabled for this project.",
+        )
 
-    # Fallback to Gemini
-    if use_provider in ("auto", "gemini") and google_api_key:
+    if google_api_key:
         try:
             from google import genai as _genai
             from google.genai import types as _genai_types
-            import base64
 
             _client = _genai.Client(api_key=google_api_key)
-            audio_base64 = base64.b64encode(file_bytes).decode("utf-8")
             mime_type = file.content_type or "audio/mpeg"
+            model_name = model or os.getenv("GEMINI_TRANSCRIPTION_MODEL", "gemini-2.5-flash")
 
             transcribe_prompt = "Transcribe this audio file accurately. Return only the transcription text, no additional commentary."
             if language:
@@ -336,13 +315,13 @@ async def transcribe_audio(
                 transcribe_prompt += f" Context: {prompt}"
 
             response = _client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=model_name,
                 contents=[
                     transcribe_prompt,
                     _genai_types.Part(
                         inline_data=_genai_types.Blob(
                             mime_type=mime_type,
-                            data=base64.b64decode(audio_base64)
+                            data=file_bytes,
                         )
                     )
                 ]
@@ -352,15 +331,9 @@ async def transcribe_audio(
             if not text:
                 raise HTTPException(status_code=500, detail="Gemini returned empty transcription")
 
-            return TranscribeResponse(text=text, model="gemini-2.5-flash", language=language)
+            return TranscribeResponse(text=text, model=model_name, language=language)
         except Exception as e:
-            if use_provider == "gemini":
-                raise HTTPException(status_code=500, detail=f"Gemini transcription failed: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"All transcription providers failed. Last error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Gemini transcription failed: {str(e)}")
 
-    # No provider available
-    if not openai_api_key and not google_api_key:
-        raise HTTPException(status_code=500, detail="No transcription provider configured. Set OPENAI_API_KEY or GOOGLE_API_KEY.")
-    
-    raise HTTPException(status_code=500, detail="Transcription failed with available providers.")
+    raise HTTPException(status_code=500, detail="No Gemini transcription provider configured. Set GOOGLE_API_KEY.")
 

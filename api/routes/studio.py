@@ -54,7 +54,7 @@ def _infer_category(name: str) -> str:
         return "knowledge"
     if name in ("http_request",):
         return "api"
-    if name in ("web_search", "web_research"):
+    if name in ("web_search",):
         return "web"
     if name in ("image_generate",):
         return "media"
@@ -64,4 +64,4 @@ def _infer_category(name: str) -> str:
 
 
 def _requires_auth(name: str) -> bool:
-    return name in ("http_request", "web_search", "web_research", "rag_search", "image_generate")
+    return name in ("http_request", "web_search", "rag_search", "image_generate")

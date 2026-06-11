@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from typing import Any, Dict, Optional
 
 from core.tools.base import ToolContext, ToolResult
@@ -11,6 +12,16 @@ class ToolExecutor:
     def __init__(self, registry: ToolRegistry):
         self.registry = registry
         self._logger = logging.getLogger("agent.runtime")
+
+    @staticmethod
+    def _preview_payload(value: Any, limit: int = 1000) -> str:
+        try:
+            text = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            text = str(value)
+        if len(text) > limit:
+            return text[:limit] + "...[truncated]"
+        return text
 
     async def execute(
         self,
@@ -34,6 +45,7 @@ class ToolExecutor:
                     "step": 0,
                     "tool_name": tool_name,
                     "status": "not_allowed",
+                    "payload": self._preview_payload({"arguments": arguments}),
                 },
             )
             return ToolResult(
@@ -55,6 +67,7 @@ class ToolExecutor:
                     "step": 0,
                     "tool_name": tool_name,
                     "status": "not_registered",
+                    "payload": self._preview_payload({"arguments": arguments}),
                 },
             )
             return ToolResult(
@@ -75,6 +88,7 @@ class ToolExecutor:
                 "step": 0,
                 "tool_name": tool_name,
                 "status": f"timeout={timeout_seconds}",
+                "payload": self._preview_payload({"arguments": arguments}),
             },
         )
         try:
@@ -90,6 +104,7 @@ class ToolExecutor:
                     "step": 0,
                     "tool_name": tool_name,
                     "status": f"ok={result.ok} latency_ms={int(result.latency_ms)}",
+                    "payload": self._preview_payload(result.to_dict()),
                 },
             )
             return result
@@ -105,6 +120,7 @@ class ToolExecutor:
                     "step": 0,
                     "tool_name": tool_name,
                     "status": f"timeout={timeout_seconds}",
+                    "payload": self._preview_payload({"arguments": arguments}),
                 },
             )
             return ToolResult(
@@ -115,4 +131,24 @@ class ToolExecutor:
                     "message": f"Tool '{tool_name}' timed out after {timeout_seconds}s",
                     "details": {"timeout_seconds": timeout_seconds},
                 },
+            )
+        except Exception as exc:
+            self._logger.exception(
+                "tool_execute_error",
+                extra={
+                    "event": "tool_execute_error",
+                    "trace_id": trace_id,
+                    "session_id": session_id,
+                    "agent_id": context.state.get("agent_id", "-"),
+                    "workflow_id": "-",
+                    "step": 0,
+                    "tool_name": tool_name,
+                    "status": type(exc).__name__,
+                    "payload": self._preview_payload({"arguments": arguments, "error": str(exc)}),
+                },
+            )
+            return ToolResult(
+                ok=False,
+                tool_name=tool_name,
+                error={"code": "tool_runtime_error", "message": str(exc), "details": {}},
             )

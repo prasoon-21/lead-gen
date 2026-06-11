@@ -1,33 +1,19 @@
-agent_id: lead_gen_agent
+agent_id: lead_linkedin_enrichment_agent
 version: "1.0"
-description: "High-coverage B2B lead generation agent that discovers companies, finds relevant people, and returns structured outreach contacts."
-model_profile: small
-system_prompt_path: config/prompts/agents/lead_gen_agent.txt
+description: "Stage 5 lead-gen agent that finds LinkedIn profiles and enriches people-level details."
+model_profile: large
+system_prompt_path: config/prompts/agents/lead_linkedin_enrichment_agent.txt
 response_mode: json
 allowed_tools:
   - web_search
   - linkedin_research
-  - apollo_people_search
-  - google_contacts_search
-  - http_request
-  - lead_quality_check
-  - json_extract
-memory_window: 10
-max_steps: 50
-max_tool_calls: 16
+memory_window: 6
+max_steps: 20
+max_tool_calls: 40
 max_runtime_seconds: 300
 default_context:
-  domain: sales_intelligence
   output_format: json
-  target_lead_count: 15
-  target_company_pool: 30
-  search_expansion_enabled: true
-  search_retry_attempts: 2
-  allow_fallback_contacts: true
-  allow_apollo_enrichment: true
-  allow_google_contacts_enrichment: true
-  split_workflow_id: lead_generation_directory_pipeline
-  minimum_confidence_floor: low
+  target_lead_count: 40
 output_schema:
   type: object
   properties:

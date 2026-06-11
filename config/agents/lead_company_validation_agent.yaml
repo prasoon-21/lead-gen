@@ -1,0 +1,34 @@
+agent_id: lead_company_validation_agent
+version: "1.0"
+description: "Stage 3 lead-gen agent that validates company candidates against official websites."
+model_profile: small
+system_prompt_path: config/prompts/agents/lead_company_validation_agent.txt
+response_mode: json
+allowed_tools:
+  - web_search
+  - http_request
+memory_window: 4
+max_steps: 14
+max_tool_calls: 30
+max_runtime_seconds: 240
+default_context:
+  output_format: json
+  target_company_pool: 60
+output_schema:
+  type: object
+  properties:
+    companies:
+      type: array
+      items:
+        type: object
+        properties:
+          company_name: { type: string }
+          company_website: { type: string }
+          industry: { type: string }
+          location: { type: string }
+          value_proposition: { type: string }
+          company_size: { type: string }
+          contact_page: { type: string }
+          source: { type: string }
+        required: [company_name, company_website]
+  required: [companies]

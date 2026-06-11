@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -21,6 +22,16 @@ class RuntimeLogFilter(logging.Filter):
         for field in _RUNTIME_FIELDS:
             if not hasattr(record, field):
                 setattr(record, field, "-")
+        payload = getattr(record, "payload", "-")
+        if isinstance(payload, (dict, list, tuple)):
+            try:
+                payload = json.dumps(payload, ensure_ascii=False)
+            except Exception:
+                payload = str(payload)
+        payload = str(payload)
+        if len(payload) > 1500:
+            payload = payload[:1500] + "...[truncated]"
+        setattr(record, "payload", payload)
         return True
 
 

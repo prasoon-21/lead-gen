@@ -36,7 +36,7 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 | `/api/blocks/extract/json` | POST | Extract JSON from text |
 | `/api/blocks/extract/image-metadata` | POST | Extract image metadata JSON |
 | `/api/blocks/file/analyze` | POST | Analyze a document with vision |
-| `/api/blocks/transcribe` | POST | Transcribe audio (Whisper) |
+| `/api/blocks/transcribe` | POST | Transcribe audio (Gemini) |
 | `/api/agent/chat` | POST | Generic agent (memory + RAG + JSON output) |
 | `/api/agent/run` | POST | Tool-calling agent kernel run by `agent_id`; accepts JSON or multipart file uploads |
 | `/api/workflow/run` | POST | Hybrid fixed + flexible workflow run by `workflow_id` |
@@ -143,11 +143,11 @@ See `.env.example` for all required variables:
 | `R2_PUBLIC_URL` | R2 public URL prefix |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
 | `REQUEST_LOG_PATH` | Request log file path (default: logs/requests.log) |
-| `LLM_PROVIDER` | Primary LLM provider (gemini/openai/anthropic) |
+| `LLM_PROVIDER` | Primary LLM provider (Gemini by default) |
 | `LLM_FALLBACKS` | Comma-separated fallback providers |
-| `OPENAI_API_KEY` | OpenAI API key (optional) |
-| `OPENAI_MODEL` | OpenAI model name |
-| `OPENAI_EMBEDDING_MODEL` | OpenAI embedding model |
+| `GEMINI_MODEL` | Gemini model name |
+| `GEMINI_EMBEDDING_MODEL` | Gemini embedding model |
+| `GEMINI_TRANSCRIPTION_MODEL` | Gemini audio transcription model |
 | `ANTHROPIC_API_KEY` | Anthropic API key (optional) |
 | `ANTHROPIC_MODEL` | Anthropic model name |
 | `AGENTS_DIR` | Agent specs directory (default: `config/agents`) |
@@ -293,17 +293,9 @@ uvicorn api.main:app --reload --port 8000
 pytest
 ```
 
-## Optional Providers
-
-To use OpenAI or Anthropic, install their SDKs:
-
-```bash
-pip install openai anthropic
-```
-
 ## Audio Transcription
 
-The `/api/blocks/transcribe` endpoint uses OpenAI Whisper in batch mode (no storage).
+The `/api/blocks/transcribe` endpoint uses Gemini in batch mode (no storage).
 
 ```bash
 curl -X POST http://localhost:8000/api/blocks/transcribe \

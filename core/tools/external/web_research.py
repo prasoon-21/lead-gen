@@ -1,10 +1,12 @@
 import json
+import os
 import re
 from typing import Any, Dict, List
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from core.tools.base import BaseTool, ToolContext, ToolExecutionError
+from core.tools.external.html_search_fallback import HTMLSearchFallbackClient
 from core.tools.external.tavily_client import TavilyClient
 
 
@@ -78,6 +80,13 @@ class WebResearchTool(BaseTool):
         "www.yelp.com",
         "wikipedia.org",
         "www.wikipedia.org",
+    }
+    _fallback_codes = {
+        "missing_api_key",
+        "tavily_error",
+        "tavily_quota_exceeded",
+        "invalid_api_key",
+        "research_unavailable",
     }
 
     @staticmethod
@@ -296,88 +305,7 @@ class WebResearchTool(BaseTool):
         )
 
     async def run(self, arguments: Dict[str, Any], context: ToolContext) -> Dict[str, Any]:
-        query = arguments.get("query", "").strip()
-        if not query:
-            raise ToolExecutionError("query is required", code="invalid_arguments")
-
-        query_variants = self._build_query_variants(arguments, context)
-        max_results = int(arguments.get("max_results", 8))
-        search_depth = arguments.get("search_depth", "advanced")
-        include_domains = arguments.get("include_domains") or []
-        exclude_domains = arguments.get("exclude_domains") or []
-        research_payload_base = {
-            "max_results": max_results,
-            "search_depth": search_depth,
-        }
-        search_payload_base = {
-            "max_results": max_results,
-            "search_depth": search_depth,
-            "include_domains": include_domains,
-            "exclude_domains": exclude_domains,
-        }
-
-        client = TavilyClient()
-        combined_results: List[Dict[str, Any]] = []
-        for variant in query_variants:
-            raw = None
-            try:
-                raw = await client.research({"query": variant, **research_payload_base})
-            except Exception:
-                raw = await client.search({"query": variant, **search_payload_base})
-            variant_results = self._simplify_results(raw.get("results", []))
-            variant_results = self._filter_results_by_domains(
-                variant_results,
-                include_domains=include_domains,
-                exclude_domains=exclude_domains,
-            )
-            combined_results.extend(variant_results)
-
-        deduped_results: List[Dict[str, Any]] = []
-        seen_urls = set()
-        for item in sorted(combined_results, key=lambda result: result.get("score") or 0, reverse=True):
-            url = (item.get("url") or "").strip().lower()
-            if url and url in seen_urls:
-                continue
-            if url:
-                seen_urls.add(url)
-            deduped_results.append(item)
-            if len(deduped_results) >= max_results:
-                break
-
-        site_paths = arguments.get("site_paths") or list(self._default_site_paths)
-        explicit_website = arguments.get("website_url") or context.state.get("company_website") or ""
-        site_urls = self._extract_candidate_sites(deduped_results, explicit_website=str(explicit_website))
-        deep_site_scan = bool(arguments.get("deep_site_scan", True))
-        site_pages = await self._scan_company_sites(site_urls, site_paths) if deep_site_scan else []
-
-        output_schema = arguments.get("output_schema") or DEFAULT_RESEARCH_SCHEMA
-        adapter = context.resources.get("adapter")
-
-        if not adapter:
-            return {
-                "report": {
-                    "summary": "Research completed without synthesis model.",
-                    "key_points": [],
-                    "sources": [{"title": r.get("title", ""), "url": r.get("url", ""), "relevance": "search_result"} for r in deduped_results[:5]],
-                    "confidence": "medium" if deduped_results else "low",
-                    "gaps": [],
-                },
-                "results": deduped_results,
-                "site_pages": site_pages,
-                "candidate_websites": site_urls,
-                "count": len(deduped_results),
-            }
-
-        report = await adapter.generate_json(
-            prompt=self._build_synthesis_prompt(query, deduped_results, site_pages, output_schema),
-            temperature=0.2,
+        raise ToolExecutionError(
+            "web_research is disabled for the cost-efficient lead funnel. Use web_search with basic depth and deterministic extraction instead.",
+            code="tool_disabled",
         )
-        return {
-            "report": report,
-            "results": deduped_results,
-            "site_pages": site_pages,
-            "candidate_websites": site_urls,
-            "count": len(deduped_results),
-            "query": query,
-            "queries_used": query_variants,
-        }

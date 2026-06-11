@@ -1,0 +1,32 @@
+agent_id: lead_directory_company_extraction_agent
+version: "1.0"
+description: "Stage 2 lead-gen agent that extracts company candidates from directory pages."
+model_profile: small
+system_prompt_path: config/prompts/agents/lead_directory_company_extraction_agent.txt
+response_mode: json
+allowed_tools:
+  - http_request
+memory_window: 4
+max_steps: 12
+max_tool_calls: 20
+max_runtime_seconds: 240
+default_context:
+  output_format: json
+  target_company_pool: 80
+output_schema:
+  type: object
+  properties:
+    companies:
+      type: array
+      items:
+        type: object
+        properties:
+          company_name: { type: string }
+          company_website: { type: string }
+          industry: { type: string }
+          location: { type: string }
+          value_proposition: { type: string }
+          company_size: { type: string }
+          source: { type: string }
+        required: [company_name, company_website]
+  required: [companies]

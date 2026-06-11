@@ -1,0 +1,31 @@
+agent_id: lead_directory_discovery_agent
+version: "1.0"
+description: "Stage 1 lead-gen agent that searches for relevant public directories, member lists, and industry listings."
+model_profile: small
+system_prompt_path: config/prompts/agents/lead_directory_discovery_agent.txt
+response_mode: json
+allowed_tools:
+  - web_search
+memory_window: 4
+max_steps: 10
+max_tool_calls: 12
+max_runtime_seconds: 180
+default_context:
+  output_format: json
+  target_directory_count: 12
+output_schema:
+  type: object
+  properties:
+    directories:
+      type: array
+      items:
+        type: object
+        properties:
+          directory_name: { type: string }
+          directory_url: { type: string }
+          directory_type: { type: string }
+          industry: { type: string }
+          location: { type: string }
+          source: { type: string }
+        required: [directory_name, directory_url]
+  required: [directories]

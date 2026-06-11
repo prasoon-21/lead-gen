@@ -6,7 +6,6 @@ system_prompt_path: config/prompts/agents/company_researcher.txt
 response_mode: text
 allowed_tools:
   - web_search
-  - web_research
   - http_request
   - json_extract
 memory_window: 12

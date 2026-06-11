@@ -65,6 +65,7 @@ class TodoSheetStore:
         "Zip Code",
         "Status",
         "Notes",
+        "Sources", # New column for citation summary
     ]
 
     AUDIT_HEADERS = [
@@ -508,6 +509,7 @@ class TodoSheetStore:
         """
         self._require_ready()
         notes = str(lead.get("notes", "") or lead.get("value_proposition", "")).strip()
+        
         metadata = self._build_lead_metadata(lead)
         serialized_notes = self._serialize_lead_notes(notes, metadata)
         row_data = {
@@ -522,6 +524,7 @@ class TodoSheetStore:
             "Zip Code":     str(lead.get("zip_code", "")).strip(),
             "Status":       str(lead.get("status", "New")).strip() or "New",
             "Notes":        serialized_notes,
+            "Sources":      metadata.pop("citation_summary", ""), # Populate new Sources column
         }
         row = [row_data.get(h, "") for h in self._lead_headers_current]
         self._leads_ws.append_row(row, value_input_option="USER_ENTERED")
@@ -556,10 +559,12 @@ class TodoSheetStore:
 
     @classmethod
     def _build_lead_metadata(cls, lead: Dict[str, Any]) -> Dict[str, Any]:
+        source_value = lead.get("source", "")
         metadata = {
             "linkedin_url": str(lead.get("linkedin_url", "")).strip(),
             "contact_page": str(lead.get("contact_page", "")).strip(),
-            "source": str(lead.get("source", "")).strip(),
+            "source": str(source_value).strip(),
+            "source_details": lead.get("source_details", []) or [],
             "confidence": str(lead.get("confidence", "")).strip(),
             "quality_score": lead.get("quality_score", 0),
             "quality_status": str(lead.get("quality_status", "")).strip(),
@@ -568,6 +573,46 @@ class TodoSheetStore:
             "field_sources": lead.get("field_sources", {}) or {},
             "contact_paths": lead.get("contact_paths", []) or [],
         }
+
+        # Build citation summary
+        citation_parts = []
+        seen_urls_for_summary = set()
+
+        # Prioritize company website
+        company_website = str(lead.get("company_website", "")).strip()
+        if company_website and company_website not in seen_urls_for_summary:
+            citation_parts.append(f"Company Website: {company_website}")
+            seen_urls_for_summary.add(company_website)
+
+        # Add LinkedIn URL
+        linkedin_url = str(lead.get("linkedin_url", "")).strip()
+        if linkedin_url and linkedin_url not in seen_urls_for_summary:
+            citation_parts.append(f"LinkedIn: {linkedin_url}")
+            seen_urls_for_summary.add(linkedin_url)
+
+        # Add Contact Page
+        contact_page = str(lead.get("contact_page", "")).strip()
+        if contact_page and contact_page not in seen_urls_for_summary and contact_page != company_website:
+            citation_parts.append(f"Contact Page: {contact_page}")
+            seen_urls_for_summary.add(contact_page)
+
+        # Add URLs from source_details
+        source_details = metadata.get("source_details", [])
+        for detail in source_details:
+            if isinstance(detail, dict) and "url" in detail:
+                detail_url = str(detail["url"]).strip()
+                if detail_url and detail_url not in seen_urls_for_summary:
+                    label = "Source"
+                    if detail.get("type") == "trusted_directory_seed":
+                        label = "Directory Source"
+                    elif detail.get("provider") == "tavily_extract":
+                        label = "Content Source"
+                    citation_parts.append(f"{label}: {detail_url}")
+                    seen_urls_for_summary.add(detail_url)
+
+        citation_summary = "Sources: " + "; ".join(citation_parts) if citation_parts else ""
+        if citation_summary:
+            metadata["citation_summary"] = citation_summary
         return {
             key: value
             for key, value in metadata.items()
@@ -576,12 +621,14 @@ class TodoSheetStore:
 
     @classmethod
     def _serialize_lead_notes(cls, notes: str, metadata: Dict[str, Any]) -> str:
+        # citation_summary is now handled in its own column in save_lead, so we don't include it here.
         if not metadata:
-            return notes
+            return notes or ""
         payload = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
-        if notes:
-            return f"{notes}\n{cls.LEAD_META_PREFIX}{payload}"
-        return f"{cls.LEAD_META_PREFIX}{payload}"
+        full_notes_content = []
+        if notes: full_notes_content.append(notes)
+        if payload != "{}": full_notes_content.append(f"{cls.LEAD_META_PREFIX}{payload}")
+        return "\n\n".join(full_notes_content)
 
     @classmethod
     def _parse_lead_notes(cls, value: str) -> Tuple[str, Dict[str, Any]]:

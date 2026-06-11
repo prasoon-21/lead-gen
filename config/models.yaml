@@ -1,14 +1,14 @@
 profiles:
   small:
-    provider: xai
-    model: grok-4.3
+    provider: gemini
+    model: gemini-2.5-flash
     temperature: 0.2
     max_tokens: 8192
-    embedding_model: ""
+    embedding_model: models/gemini-embedding-2
 
   large:
-    provider: xai
-    model: grok-4.3
+    provider: gemini
+    model: gemini-2.5-flash
     temperature: 0.5
     max_tokens: 8192
-    embedding_model: ""
+    embedding_model: models/gemini-embedding-2

@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 try:
-    from linkedin_scraper import BrowserManager, wait_for_manual_login
+    from linkedin_scraper import BrowserManager
 except ImportError:
     print("Error: linkedin-scraper not installed. Please run 'pip install linkedin-scraper'")
     sys.exit(1)
@@ -22,34 +22,25 @@ async def create_session():
     try:
         async with BrowserManager(headless=False) as browser:
             # Navigate to LinkedIn
-            await browser.page.goto("https://www.linkedin.com/login")
+            await browser.page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
             
             print("\n[ACTION REQUIRED] Please log in to LinkedIn in the browser window that just opened.")
             print("The script will wait until you have successfully logged in (up to 5 minutes)...")
             
-            # Wait for manual login by checking cookies or URL
-            logged_in = False
-            for i in range(300):
-                await asyncio.sleep(1)
-                try:
-                    cookies = await browser.page.context.cookies()
-                    li_at_cookie = next((c for c in cookies if c['name'] == 'li_at'), None)
-                    if li_at_cookie and li_at_cookie['value']:
-                        logged_in = True
-                        print("\n[SUCCESS] Detected active LinkedIn session cookie!")
-                        break
-                except Exception:
-                    pass
-                
-                if "linkedin.com/feed" in browser.page.url:
-                    logged_in = True
-                    break
-                    
-                if i % 10 == 0:
-                    print(".", end="", flush=True)
-            
-            if not logged_in:
-                raise TimeoutError("Manual login timeout. Please try again and complete login faster.")
+            try:
+                # Wait for navigation to the feed page, which indicates a successful login.
+                # This is more efficient than polling in a loop.
+                await browser.page.wait_for_url("**/feed/**", timeout=300_000) # 5 minutes
+                print("\n[SUCCESS] Detected successful login.")
+
+            except Exception:
+                # Fallback check for the session cookie if URL navigation isn't detected
+                print("\nLogin URL change not detected, checking for session cookie as a fallback...")
+                cookies = await browser.page.context.cookies()
+                li_at_cookie = next((c for c in cookies if c['name'] == 'li_at'), None)
+                if not (li_at_cookie and li_at_cookie['value']):
+                    raise TimeoutError("Manual login timed out or the session cookie could not be detected. Please try again.")
+                print("[SUCCESS] Detected active LinkedIn session cookie!")
             
             # Save session
             await browser.save_session(session_path)

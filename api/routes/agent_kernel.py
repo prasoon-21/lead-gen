@@ -21,7 +21,7 @@ The /run endpoint auto-detects content type:
 Supported attachment types
 --------------------------
   Images  jpg/png/gif/webp  → described via Gemini Vision → injected into message
-  Audio   mp3/wav/ogg/m4a/webm/flac → transcribed via OpenAI Whisper → injected
+  Audio   mp3/wav/ogg/m4a/webm/flac → transcribed via Gemini → injected
   PDF     .pdf              → text extracted via pypdf → injected
   Word    .docx             → text extracted via python-docx → injected
   Excel   .xlsx/.xlsm       → text extracted from workbook XML → injected
@@ -309,3 +309,5 @@ def _validate_upload_sizes(
             status_code=413,
             detail=f"combined upload size exceeds the {max_total_bytes // (1024 * 1024)} MB upload limit",
         )
+
+

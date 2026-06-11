@@ -10,7 +10,7 @@ Usage:
 Supported formats
 -----------------
 Images   : jpg, jpeg, png, gif, webp        → Gemini Vision analysis
-Audio    : mp3, wav, ogg, m4a, webm, flac   → OpenAI Whisper transcription
+Audio    : mp3, wav, ogg, m4a, webm, flac   → Gemini transcription
 PDF      : .pdf                              → pypdf text extraction
 Word     : .docx                             → python-docx text extraction
 Excel    : .xlsx, .xlsm                      → lightweight XML text extraction
@@ -249,7 +249,7 @@ class MediaProcessor:
         result.summaries.append(AttachmentSummary(
             filename=filename, mime_type=mime, kind="audio",
             chars_extracted=len(transcript),
-            note="Transcribed via Whisper",
+            note="Transcribed via Gemini",
         ))
 
     # ── PDF ───────────────────────────────────────────────────────────────────
@@ -378,22 +378,36 @@ class MediaProcessor:
 # ── Standalone helpers ────────────────────────────────────────────────────────
 
 async def _transcribe_audio(filename: str, data: bytes, mime: str) -> str:
-    """Transcribe audio using OpenAI Whisper. Falls back to a placeholder if unavailable."""
-    api_key = os.getenv("OPENAI_API_KEY")
+    """Transcribe audio using Gemini. Falls back to a placeholder if unavailable."""
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        return "[Audio transcription unavailable — OPENAI_API_KEY not set]"
+        return "[Audio transcription unavailable — GOOGLE_API_KEY not set]"
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key)
-        # Whisper accepts the file as a tuple: (filename, bytes, mime_type)
-        transcript = await client.audio.transcriptions.create(
-            model="whisper-1",
-            file=(filename, io.BytesIO(data), mime),
-            response_format="text",
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = genai.Client(api_key=api_key)
+        model_name = os.getenv("GEMINI_TRANSCRIPTION_MODEL", "gemini-2.5-flash")
+        prompt = (
+            "Transcribe this audio file accurately. "
+            "Return only the transcription text, no additional commentary."
         )
-        return str(transcript).strip()
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[
+                prompt,
+                genai_types.Part(
+                    inline_data=genai_types.Blob(
+                        mime_type=mime or "audio/mpeg",
+                        data=data,
+                    )
+                ),
+            ],
+        )
+        text = (response.text or "").strip()
+        return text or "[Audio transcription unavailable - Gemini returned empty text]"
     except Exception as exc:
-        logger.warning("whisper_transcription_failed filename=%s error=%s", filename, exc)
+        logger.warning("gemini_transcription_failed filename=%s error=%s", filename, exc)
         return f"[Audio transcription failed: {exc}]"
 
 
@@ -525,3 +539,5 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+

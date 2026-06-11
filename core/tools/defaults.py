@@ -1,7 +1,6 @@
 from core.tools.registry import ToolRegistry
 from core.tools.external.http_request import HTTPRequestTool
 from core.tools.external.web_search import WebSearchTool
-from core.tools.external.web_research import WebResearchTool
 from core.tools.external.linkedin_research import LinkedInResearchTool
 from core.tools.internal.file_analyze import FileAnalyzeTool
 from core.tools.internal.image_generate import ImageGenerateTool
@@ -30,7 +29,6 @@ def build_default_tool_registry(
     registry.register(JSONExtractTool())
     registry.register(HTTPRequestTool())
     registry.register(WebSearchTool())
-    registry.register(WebResearchTool())
     registry.register(LinkedInResearchTool())
     registry.register(TodoEnsureStoreTool())
     registry.register(TodoCreateTool())

@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import re
+from typing import Dict, Iterable, List
+from urllib.parse import urlparse
+
+
+DEFAULT_WEB_SEARCH_MAX_RESULTS = 10
+MAX_WEB_SEARCH_MAX_RESULTS = 12
+DEFAULT_TAVILY_SEARCH_DEPTH = "basic"
+DEFAULT_TAVILY_EXTRACT_DEPTH = "basic"
+
+TRUSTED_DIRECTORY_DOMAINS = (
+    "clutch.co",
+    "chamberofcommerce.com",
+    "bbb.org",
+)
+
+_QUERY_TEMPLATES = (
+    'site:clutch.co/it-services "{industry}" "{location}"',
+    'site:clutch.co/agencies "{industry}" "{location}"',
+    'site:glassdoor.co.in "{industry}" "{location}"',
+    'site:chamberofcommerce.com "{industry}" "{location}" "find a business"',
+    'site:chamberofcommerce.com "{industry}" "{location}" "member directory"',
+    'site:bbb.org "{industry}" "{location}"',
+)
+
+_GOOD_DIRECTORY_PATH_MARKERS = (
+    "/directory",
+    "/directories",
+    "/members",
+    "/member-directory",
+    "/member-list",
+    "/find-a-business",
+    "/find-a-member",
+    "/business-directory",
+    "/companies",
+    "/vendors",
+    "/partners",
+    "/search",
+)
+
+_BAD_DIRECTORY_PATH_MARKERS = (
+    "/article",
+    "/articles",
+    "/news",
+    "/blog",
+    "/press",
+    "/event",
+    "/events",
+    "/sitemap",
+    "/resource",
+    "/resources",
+    "/insight",
+    "/insights",
+    "/trust",
+    "/privacy",
+    "/terms",
+    "/contact",
+    "/about",
+)
+
+
+def clamp_web_search_max_results(value: int | None) -> int:
+    if value is None:
+        return DEFAULT_WEB_SEARCH_MAX_RESULTS
+    try:
+        numeric = int(value)
+    except Exception:
+        numeric = DEFAULT_WEB_SEARCH_MAX_RESULTS
+    return max(1, min(numeric, MAX_WEB_SEARCH_MAX_RESULTS))
+
+
+def _slugify_location(value: str) -> str:
+    tokens = re.findall(r"[a-z0-9]+", (value or "").lower())
+    return "".join(tokens)
+
+
+def _dynamic_chamber_queries(industry: str, location: str) -> List[str]:
+    slug = _slugify_location(location)
+    if not slug:
+        return []
+
+    candidate_sites = [
+        f"{slug}.org.uk",
+        f"{slug}chamber.com",
+        f"{slug}chamber.org",
+        f"{slug}chamber.net",
+        f"member.{slug}chamber.com",
+    ]
+    queries: List[str] = []
+    for site in candidate_sites:
+        queries.append(f'site:{site} "{industry}" "{location}" "member directory"')
+        queries.append(f'site:{site} "{industry}" "{location}" "business directory"')
+    return queries
+
+
+def build_targeted_directory_queries(
+    *,
+    industry: str,
+    location: str,
+    seed_query: str = "",
+    max_queries: int = 6,
+) -> List[str]:
+    cleaned_industry = " ".join((industry or "").split()).strip()
+    cleaned_location = " ".join((location or "").split()).strip()
+    cleaned_seed = " ".join((seed_query or "").split()).strip()
+    queries: List[str] = []
+
+    def add(query: str) -> None:
+        normalized = " ".join((query or "").split()).strip()
+        if normalized and normalized not in queries:
+            queries.append(normalized)
+
+    if cleaned_industry and cleaned_location:
+        for template in _QUERY_TEMPLATES:
+            add(template.format(industry=cleaned_industry, location=cleaned_location))
+        for query in _dynamic_chamber_queries(cleaned_industry, cleaned_location):
+            add(query)
+
+    if cleaned_seed and cleaned_location:
+        add(f'site:clutch.co "{cleaned_seed}" "{cleaned_location}"')
+    elif cleaned_seed and cleaned_industry:
+        add(f'site:glassdoor.co.in "{cleaned_seed}" "{cleaned_industry}"')
+
+    return queries[:max_queries]
+
+
+def is_whitelisted_directory_url(url: str) -> bool:
+    parsed = urlparse(url or "")
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = (parsed.path or "").lower()
+
+    if not host:
+        return False
+    if any(marker in path for marker in _BAD_DIRECTORY_PATH_MARKERS):
+        return False
+
+    if host == "clutch.co" or host.endswith(".clutch.co"):
+        return "/directory" in path or "/agencies" in path or "/it-services" in path or "/developers" in path
+
+    if host == "chamberofcommerce.com" or host.endswith(".chamberofcommerce.com"):
+        return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
+
+    if host == "bbb.org" or host.endswith(".bbb.org"):
+        return "/us/" in path or "/search" in path or "/business-reviews" in path
+
+    if "chamber" in host and host.endswith((".org", ".com")):
+        return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
+
+    if host.startswith("member.") or ".member." in host:
+        return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
+
+    return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
+
+
+def looks_like_bad_directory_path(url: str) -> bool:
+    path = (urlparse(url or "").path or "").lower()
+    return any(marker in path for marker in _BAD_DIRECTORY_PATH_MARKERS)
+
+
+def filter_whitelisted_directory_results(results: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
+    filtered: List[Dict[str, object]] = []
+    for item in results or []:
+        url = str(item.get("url") or "").strip()
+        if url and is_whitelisted_directory_url(url):
+            filtered.append(item)
+    return filtered

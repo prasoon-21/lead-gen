@@ -405,14 +405,16 @@ class LinkedInResearchTool(BaseTool):
                     "Accept-Language": "en-US,en;q=0.9",
                 }
                 try:
-                    await client.get("https://www.linkedin.com", headers=home_headers)
+                    home_response = await client.get("https://www.linkedin.com", headers=home_headers)
+                    home_response.raise_for_status()
                 except Exception as exc:
-                    logger.warning("Failed to fetch homepage for JSESSIONID: %s", exc)
+                    logger.error("Failed to fetch LinkedIn homepage to get a JSESSIONID: %s", exc)
+                    return {"error": "Failed to initialize a session with LinkedIn. The site may be blocking requests."}
 
                 jsessionid = client.cookies.get("JSESSIONID", "")
                 if not jsessionid:
-                    jsessionid = "ajax:1827361849102837482"
-                    client.cookies.set("JSESSIONID", jsessionid, domain=".linkedin.com")
+                    logger.error("Could not retrieve a JSESSIONID cookie from LinkedIn homepage.")
+                    return {"error": "Could not retrieve a required JSESSIONID cookie. LinkedIn might be blocking the request."}
 
                 client.cookies.set("li_at", li_at, domain=".linkedin.com")
                 headers = self._build_headers(li_at, jsessionid)
@@ -483,12 +485,16 @@ class LinkedInResearchTool(BaseTool):
             if exc.response.status_code == 404:
                 return {"error": f"Profile not found: {profile_id}"}
             logger.warning("HTTP error fetching profile %s: %s", profile_id, exc)
-            if exc.response.status_code == 410:
+            if exc.response.status_code == 410: # GONE
+                logger.info("Profile %s returned 410, attempting alternate fetch.", profile_id)
                 result.update(await self._scrape_person_alternate(client, headers, url, profile_id))
-
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to decode JSON from profile API for %s: %s", profile_id, exc)
+            return {"error": f"Failed to parse LinkedIn profile response for {profile_id}."}
         except Exception as exc:
             logger.error("Profile fetch for %s failed: %s", profile_id, exc, exc_info=True)
-
+            # Don't proceed if the primary profile fetch fails catastrophically
+            return {"error": f"An unexpected error occurred while fetching profile {profile_id}."}
 
         contact_url = f"https://www.linkedin.com/voyager/api/identity/profiles/{profile_id}/profileContactInfo"
         try:

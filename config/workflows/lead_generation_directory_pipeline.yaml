@@ -1,0 +1,88 @@
+workflow_id: lead_generation_directory_pipeline
+version: "1.1"
+description: "Directory-first lead-generation workflow: discover directories, extract companies, validate websites, enrich people/contacts, then score."
+start_at: discover_directories
+
+nodes:
+  - node_id: discover_directories
+    node_type: agent
+    config:
+      agent_id: lead_directory_discovery_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.directory_text: text
+      outputs.directory_json: json
+      outputs.directories: json.directories
+      outputs.directory_steps: steps
+    transitions:
+      - to: extract_companies
+        when: always
+
+  - node_id: extract_companies
+    node_type: agent
+    config:
+      agent_id: lead_directory_company_extraction_agent
+    input_map:
+      message: outputs.directories
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.extraction_text: text
+      outputs.extraction_json: json
+      outputs.discovery_companies: json.companies
+      outputs.extraction_steps: steps
+    transitions:
+      - to: validate_companies
+        when: always
+
+  - node_id: validate_companies
+    node_type: agent
+    config:
+      agent_id: lead_company_validation_agent
+    input_map:
+      message: outputs.discovery_companies
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.validation_text: text
+      outputs.validation_json: json
+      outputs.validated_companies: json.companies
+      outputs.validation_steps: steps
+    transitions:
+      - to: enrich_contacts
+        when: always
+
+  - node_id: enrich_contacts
+    node_type: agent
+    config:
+      agent_id: lead_company_contact_enrichment_agent
+    input_map:
+      message: outputs.validated_companies
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.contact_text: text
+      outputs.contact_json: json
+      outputs.people_enriched_leads: json.leads
+      outputs.contact_steps: steps
+    transitions:
+      - to: score_leads
+        when: always
+
+  - node_id: score_leads
+    node_type: agent
+    config:
+      agent_id: lead_quality_scoring_agent
+    input_map:
+      message: outputs.people_enriched_leads
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.enriched_text: text
+      outputs.enriched_json: json
+      outputs.enriched_leads: json.leads
+      outputs.quality_steps: steps
+    transitions: []

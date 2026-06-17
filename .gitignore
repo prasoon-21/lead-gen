@@ -30,6 +30,11 @@ linkedin_session*.json
 logs/
 !logs/README.md
 *.log
+tmp_*
+*.tmp
+*.bak
+*.orig
+*.rej
 
 # OS
 .DS_Store

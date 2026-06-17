@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from api.state import get_state
 from core.services.production_lead_pipeline import ProductionLeadPipeline
+from core.services.velit.velit_lead_pipeline import VelitLeadPipeline
 
 
 router = APIRouter()
@@ -177,7 +178,19 @@ async def run_workflow(request: WorkflowRunRequest):
     )
 
     if request.workflow_id == "lead_generation_directory_pipeline":
-        return await _run_production_lead_workflow(request)
+        return await _run_pipeline_workflow(
+            request,
+            pipeline_cls=ProductionLeadPipeline,
+            max_target_count=20,
+            pipeline_label="production_lead_pipeline",
+        )
+    if request.workflow_id == "velit_lead_generation_pipeline":
+        return await _run_pipeline_workflow(
+            request,
+            pipeline_cls=VelitLeadPipeline,
+            max_target_count=100,
+            pipeline_label="velit_lead_pipeline",
+        )
 
     try:
         result = await state.workflow_engine.run(
@@ -230,7 +243,13 @@ async def run_workflow(request: WorkflowRunRequest):
     )
 
 
-async def _run_production_lead_workflow(request: WorkflowRunRequest) -> WorkflowRunResponse:
+async def _run_pipeline_workflow(
+    request: WorkflowRunRequest,
+    *,
+    pipeline_cls: type,
+    max_target_count: int,
+    pipeline_label: str,
+) -> WorkflowRunResponse:
     started = time.perf_counter()
     payload = request.payload or {}
     context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
@@ -241,9 +260,9 @@ async def _run_production_lead_workflow(request: WorkflowRunRequest) -> Workflow
         target_count = int(context.get("target_lead_count") or 15)
     except (TypeError, ValueError):
         target_count = 15
-    target_count = max(1, min(target_count, 20))
+    target_count = max(1, min(target_count, max_target_count))
 
-    pipeline = ProductionLeadPipeline()
+    pipeline = pipeline_cls()
     result = await pipeline.run(
         industry=industry,
         location=location,
@@ -266,7 +285,7 @@ async def _run_production_lead_workflow(request: WorkflowRunRequest) -> Workflow
         "workflow": {
             "workflow_id": request.workflow_id,
             "completed": True,
-            "fast_path": "production_lead_pipeline",
+            "fast_path": pipeline_label,
         },
         "inputs": payload,
         "outputs": {

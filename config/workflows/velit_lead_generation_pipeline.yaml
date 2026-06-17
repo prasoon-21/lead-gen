@@ -1,0 +1,17 @@
+workflow_id: velit_lead_generation_pipeline
+version: "1.0"
+description: "Velit-specific lead-generation workflow using Tavily search, direct company site resolution, web scraping, Gemini scoring, and LinkedIn enrichment."
+start_at: velit_direct_discovery
+
+nodes:
+  - node_id: velit_direct_discovery
+    node_type: agent
+    config:
+      agent_id: lead_gen_agent
+    input_map:
+      message: input.message
+      context: input.context
+      session_id: session_id
+    output_map:
+      outputs.discovery_text: text
+    transitions: []

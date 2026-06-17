@@ -36,21 +36,57 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
+    :root {
+      --bg-main: #090b14;
+      --bg-grad-a: rgba(99,102,241,.13);
+      --bg-grad-b: rgba(34,211,238,.10);
+      --text-main: #eef2ff;
+      --glass-bg: rgba(12, 17, 34, 0.82);
+      --glass-border: rgba(129,129,255,.16);
+      --field-bg: rgba(7,12,24,.88);
+      --field-border: rgba(129,129,255,.24);
+      --field-text: #eef2ff;
+      --field-placeholder: rgba(191,219,254,.34);
+      --row-hover: rgba(129,129,255,.09);
+      --scroll-thumb: #32405f;
+      --scroll-thumb-hover: #44567d;
+      --btn-text: #12182d;
+    }
+
+    body.light-theme {
+      --bg-main: #f4f7ff;
+      --bg-grad-a: rgba(99,102,241,.18);
+      --bg-grad-b: rgba(14,165,233,.14);
+      --text-main: #0f172a;
+      --glass-bg: rgba(255, 255, 255, 0.96);
+      --glass-border: rgba(99,102,241,.22);
+      --field-bg: #ffffff;
+      --field-border: rgba(99,102,241,.28);
+      --field-text: #0f172a;
+      --field-placeholder: rgba(51,65,85,.72);
+      --row-hover: rgba(99,102,241,.11);
+      --scroll-thumb: #a5b4fc;
+      --scroll-thumb-hover: #818cf8;
+      --btn-text: #ffffff;
+    }
+
     body {
-      background-color: #0c0c17;
-      color: #e2e8f0;
+      background-color: var(--bg-main);
+      color: var(--text-main);
       font-family: 'Outfit', sans-serif;
       background-image:
-        radial-gradient(ellipse at 5% 10%,  rgba(129,129,255,.07) 0%, transparent 50%),
-        radial-gradient(ellipse at 95% 90%, rgba(142,197,252,.06) 0%, transparent 50%);
+        radial-gradient(ellipse at 5% 10%, var(--bg-grad-a) 0%, transparent 50%),
+        radial-gradient(ellipse at 95% 90%, var(--bg-grad-b) 0%, transparent 50%);
       min-height: 100vh;
+      transition: background-color .25s ease, color .25s ease;
     }
 
     /* Glass card */
     .glass {
-      background: rgba(20, 20, 40, 0.65);
+      background: var(--glass-bg);
       backdrop-filter: blur(14px);
-      border: 1px solid rgba(129,129,255,.12);
+      border: 1px solid var(--glass-border);
+      transition: background .25s ease, border-color .25s ease;
     }
 
     /* Premium button */
@@ -60,7 +96,7 @@
       background-position: left center;
       transition: background-position .4s ease, transform .2s ease, box-shadow .2s ease;
       box-shadow: 0 4px 20px rgba(129,129,255,.35);
-      color: #1a1a3a;
+      color: var(--btn-text);
       font-weight: 700;
     }
     .btn-run:hover:not(:disabled) {
@@ -74,16 +110,16 @@
     /* Input */
     .field {
       width: 100%;
-      background: rgba(10,10,20,.7);
-      border: 1px solid rgba(129,129,255,.18);
+      background: var(--field-bg);
+      border: 1px solid var(--field-border);
       border-radius: 14px;
       padding: 12px 16px;
       font-size: 14px;
-      color: #e2e8f0;
+      color: var(--field-text);
       outline: none;
       transition: border-color .2s, box-shadow .2s;
     }
-    .field::placeholder { color: rgba(129,129,255,.3); }
+    .field::placeholder { color: var(--field-placeholder); }
     .field:focus {
       border-color: rgba(129,129,255,.55);
       box-shadow: 0 0 0 3px rgba(129,129,255,.1);
@@ -91,13 +127,13 @@
 
     /* Table row hover */
     .lead-row { transition: background .15s ease; }
-    .lead-row:hover { background: rgba(129,129,255,.06); }
+    .lead-row:hover { background: var(--row-hover); }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #3a3a6a; }
+    ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
     /* Log entry */
     .log-entry { animation: fadeSlideIn .25s ease forwards; }
@@ -136,6 +172,66 @@
       border-radius: 2px;
       transition: width .4s ease;
     }
+
+    .theme-toggle {
+      border: 1px solid rgba(129,129,255,.18);
+      background: rgba(99,102,241,.10);
+      color: inherit;
+    }
+
+    body.light-theme .glass {
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    body.light-theme .theme-toggle {
+      background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(238,242,255,.94));
+      border-color: rgba(99,102,241,.24);
+      color: #1e293b;
+    }
+
+    body.light-theme .chip {
+      background: rgba(99,102,241,.12);
+      color: #3730a3;
+    }
+
+    body.light-theme .pulse-dot {
+      background: #4f46e5;
+    }
+
+    body.light-theme .field:focus {
+      border-color: rgba(79,70,229,.55);
+      box-shadow: 0 0 0 4px rgba(99,102,241,.14);
+    }
+
+    body.light-theme .text-white { color: #111827 !important; }
+    body.light-theme .hover\:text-white:hover { color: #0f172a !important; }
+    body.light-theme .text-lv-100 { color: #111827 !important; }
+    body.light-theme .text-lv-200 { color: #1e293b !important; }
+    body.light-theme .text-lv-300 { color: #334155 !important; }
+    body.light-theme .text-lv-300\/60 { color: rgba(51, 65, 85, 0.82) !important; }
+    body.light-theme .text-lv-300\/70 { color: rgba(51, 65, 85, 0.88) !important; }
+    body.light-theme .text-lv-400 { color: #475569 !important; }
+    body.light-theme .text-lv-400\/60 { color: rgba(71, 85, 105, 0.82) !important; }
+    body.light-theme .text-lv-400\/70 { color: rgba(71, 85, 105, 0.88) !important; }
+    body.light-theme .text-lv-500 { color: #64748b !important; }
+    body.light-theme .text-lv-500\/80 { color: rgba(100, 116, 139, 0.86) !important; }
+    body.light-theme .text-lv-600 { color: #475569 !important; }
+    body.light-theme .text-lv-700 { color: #334155 !important; }
+    body.light-theme .hover\:text-lv-200:hover { color: #0f172a !important; }
+    body.light-theme .hover\:bg-lv-500\/10:hover { background: rgba(99,102,241,.12) !important; }
+    body.light-theme .bg-lv-950\/20 { background: rgba(248, 250, 252, 0.84) !important; }
+    body.light-theme .bg-lv-950\/35 { background: rgba(248, 250, 252, 0.92) !important; }
+    body.light-theme .bg-lv-950\/40 { background: rgba(241, 245, 249, 0.96) !important; }
+    body.light-theme .bg-lv-950\/50 { background: rgba(226, 232, 240, 0.9) !important; }
+    body.light-theme .bg-lv-900\/25 { background: rgba(241, 245, 249, 0.95) !important; }
+    body.light-theme .bg-lv-900\/40 { background: rgba(226, 232, 240, 0.96) !important; }
+    body.light-theme .bg-lv-900\/50 { background: rgba(226, 232, 240, 0.98) !important; }
+    body.light-theme .bg-lv-500\/10 { background: rgba(99,102,241,.12) !important; }
+    body.light-theme .bg-lv-500\/20 { background: rgba(99,102,241,.16) !important; }
+    body.light-theme .border-lv-500\/10 { border-color: rgba(99,102,241,.18) !important; }
+    body.light-theme .border-lv-500\/20 { border-color: rgba(99,102,241,.24) !important; }
+    body.light-theme .border-lv-500\/30 { border-color: rgba(99,102,241,.28) !important; }
+    body.light-theme .border-lv-900\/50 { border-color: rgba(148, 163, 184, 0.34) !important; }
   </style>
 </head>
 <body>
@@ -153,10 +249,16 @@
         <p class="text-[10px] text-lv-400/60 uppercase tracking-[.18em] font-semibold">B2B Lead Intelligence</p>
       </div>
     </div>
-    <a href="/" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-      Dashboard
-    </a>
+    <div class="flex items-center gap-3">
+      <button id="theme-toggle-btn" class="theme-toggle px-4 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2">
+        <span id="theme-toggle-icon">☀️</span>
+        <span id="theme-toggle-label">Light Mode</span>
+      </button>
+      <a href="/" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
+    </div>
   </nav>
 
   <!-- ── MAIN ── -->
@@ -242,7 +344,6 @@
         </div>
       </div>
 
-      <!-- Pipeline Observability -->
       <section class="glass rounded-3xl p-5 shadow-2xl space-y-4">
         <div class="flex items-center justify-between">
           <h2 class="text-[11px] font-bold uppercase tracking-wider text-lv-400">Pipeline Observability</h2>
@@ -251,45 +352,35 @@
 
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Directories Found</div>
-            <div id="obs-directories-found" class="text-xl font-bold text-white mt-1">0</div>
-          </div>
-          <div class="rounded-2xl border border-red-500/10 bg-red-500/5 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-red-300 font-bold">Directories Blocked</div>
-            <div id="obs-directories-blocked" class="text-xl font-bold text-red-200 mt-1">0</div>
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Discovered</div>
+            <div id="obs-discovered" class="text-xl font-bold text-white mt-1">0</div>
           </div>
           <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Companies Extracted</div>
-            <div id="obs-companies-extracted" class="text-xl font-bold text-white mt-1">0</div>
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Whitelisted</div>
+            <div id="obs-whitelisted" class="text-xl font-bold text-white mt-1">0</div>
+          </div>
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Corporate</div>
+            <div id="obs-corporate" class="text-xl font-bold text-white mt-1">0</div>
           </div>
           <div class="rounded-2xl border border-green-500/10 bg-green-500/5 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-green-300 font-bold">Valid Websites</div>
-            <div id="obs-valid-websites" class="text-xl font-bold text-green-200 mt-1">0</div>
+            <div class="text-[10px] uppercase tracking-wider text-green-300 font-bold">Verified</div>
+            <div id="obs-verified" class="text-xl font-bold text-green-200 mt-1">0</div>
           </div>
           <div class="rounded-2xl border border-amber-500/10 bg-amber-500/5 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-amber-300 font-bold">Contacts Found</div>
-            <div id="obs-contact-info" class="text-xl font-bold text-amber-200 mt-1">0</div>
+            <div class="text-[10px] uppercase tracking-wider text-amber-300 font-bold">Extracted</div>
+            <div id="obs-extracted" class="text-xl font-bold text-amber-200 mt-1">0</div>
           </div>
           <div class="rounded-2xl border border-sky-500/10 bg-sky-500/5 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-sky-300 font-bold">LinkedIn People</div>
-            <div id="obs-linkedin-people" class="text-xl font-bold text-sky-200 mt-1">0</div>
+            <div class="text-[10px] uppercase tracking-wider text-sky-300 font-bold">Returned</div>
+            <div id="obs-returned" class="text-xl font-bold text-sky-200 mt-1">0</div>
           </div>
         </div>
 
         <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 p-3">
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Per-Directory Extraction</h3>
-            <span class="text-[9px] text-lv-500">Companies extracted per directory</span>
-          </div>
-          <div id="obs-directory-list" class="space-y-2 text-[11px] text-lv-200">
-            <div class="text-lv-600 italic">Run a search to inspect directory-level extraction diagnostics.</div>
-          </div>
-        </div>
-
-        <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 p-3">
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Search Queries Used</h3>
-            <span class="text-[9px] text-lv-500">Exact Tavily directory queries for this run</span>
+            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Queries Used</h3>
+            <span class="text-[9px] text-lv-500">Exact / inferred search queries for this run</span>
           </div>
           <div id="obs-query-list" class="space-y-2 text-[11px] text-lv-200">
             <div class="text-lv-600 italic">Generated queries will appear here after a run.</div>
@@ -298,7 +389,17 @@
 
         <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 p-3">
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Dropped Leads And Reasons</h3>
+            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Fetched Targets</h3>
+            <span class="text-[9px] text-lv-500">Targets accepted into the pipeline</span>
+          </div>
+          <div id="obs-target-list" class="space-y-2 text-[11px] text-lv-200">
+            <div class="text-lv-600 italic">No fetched targets were recorded for this run.</div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-[10px] font-bold uppercase tracking-wider text-lv-400">Dropped Reasons</h3>
             <span class="text-[9px] text-lv-500">Rows filtered out across the pipeline</span>
           </div>
           <div id="obs-drop-reasons" class="space-y-2 text-[11px] text-lv-200">
@@ -363,6 +464,14 @@
           <button id="export-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             Export JSON
+          </button>
+          <button id="view-run-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H9m12 0c-1.657 4-5.477 7-9 7s-7.343-3-9-7c1.657-4 5.477-7 9-7s7.343 3 9 7z"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+            View Run JSON
+          </button>
+          <button id="download-run-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-8m0 8l-3-3m3 3l3-3M5 20h14"/></svg>
+            Download Run JSON
           </button>
           <button id="deep-research-btn" class="px-4 py-2 rounded-xl bg-lv-600 hover:bg-lv-500 text-[11px] font-bold text-white shadow-lg shadow-lv-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
@@ -441,6 +550,26 @@
     </div>
   </div>
 
+  <div id="run-json-modal" class="fixed inset-0 z-[110] hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="glass w-full max-w-6xl max-h-[85vh] rounded-[32px] shadow-2xl flex flex-col overflow-hidden border border-lv-500/20">
+        <div class="px-8 py-5 border-b border-lv-500/10 flex items-center justify-between bg-lv-950/40">
+          <div>
+            <h2 class="text-xl font-bold text-white">Run JSON</h2>
+            <p class="text-xs text-lv-400/70 mt-1">Full workflow response payload for this run.</p>
+          </div>
+          <button id="close-run-json-btn" class="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <svg class="w-6 h-6 text-lv-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="p-6 overflow-auto">
+          <pre id="run-json-content" class="text-[11px] leading-relaxed whitespace-pre-wrap break-words text-lv-100 bg-lv-950/40 border border-lv-500/10 rounded-2xl p-4"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── State ────────────────────────────────────────────────────────────────
     const state = {
@@ -451,6 +580,10 @@
       startTime: null,
       timerInterval: null,
       mode: 'generic', // 'generic' | 'velit'
+      theme: 'dark',
+      lastRunJson: null,
+      lastRunFilename: '',
+      lastRunQueryPreview: [],
     };
 
     // ── DOM refs ─────────────────────────────────────────────────────────────
@@ -470,21 +603,29 @@
     const timerDisplay   = document.getElementById('timer');
     const progressWrap   = document.getElementById('progress-wrap');
     const progressBar    = document.getElementById('progress-bar');
-    const obsDirectoriesFound = document.getElementById('obs-directories-found');
-    const obsDirectoriesBlocked = document.getElementById('obs-directories-blocked');
-    const obsCompaniesExtracted = document.getElementById('obs-companies-extracted');
-    const obsValidWebsites = document.getElementById('obs-valid-websites');
-    const obsContactInfo = document.getElementById('obs-contact-info');
-    const obsLinkedinPeople = document.getElementById('obs-linkedin-people');
-    const obsDirectoryList = document.getElementById('obs-directory-list');
-    const obsQueryList = document.getElementById('obs-query-list');
-    const obsDropReasons = document.getElementById('obs-drop-reasons');
     const selectAllCheck = document.getElementById('select-all-checkbox');
     const deepResBtn     = document.getElementById('deep-research-btn');
     const modal          = document.getElementById('research-modal');
     const closeModalBtn  = document.getElementById('close-modal-btn');
     const modalResults   = document.getElementById('research-results-container');
     const modalLoading   = document.getElementById('research-loading-state');
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const themeToggleIcon = document.getElementById('theme-toggle-icon');
+    const themeToggleLabel = document.getElementById('theme-toggle-label');
+    const viewRunJsonBtn = document.getElementById('view-run-json-btn');
+    const downloadRunJsonBtn = document.getElementById('download-run-json-btn');
+    const runJsonModal = document.getElementById('run-json-modal');
+    const closeRunJsonBtn = document.getElementById('close-run-json-btn');
+    const runJsonContent = document.getElementById('run-json-content');
+    const obsDiscovered = document.getElementById('obs-discovered');
+    const obsWhitelisted = document.getElementById('obs-whitelisted');
+    const obsCorporate = document.getElementById('obs-corporate');
+    const obsVerified = document.getElementById('obs-verified');
+    const obsExtracted = document.getElementById('obs-extracted');
+    const obsReturned = document.getElementById('obs-returned');
+    const obsQueryList = document.getElementById('obs-query-list');
+    const obsTargetList = document.getElementById('obs-target-list');
+    const obsDropReasons = document.getElementById('obs-drop-reasons');
 
     const btnModeGeneric = document.getElementById('btn-mode-generic');
     const btnModeVelit   = document.getElementById('btn-mode-velit');
@@ -492,6 +633,24 @@
     const industryWrap   = document.getElementById('industry-wrap');
 
     btnText.textContent = 'Generate Leads';
+
+    function applyTheme(theme) {
+      state.theme = theme === 'light' ? 'light' : 'dark';
+      document.body.classList.toggle('light-theme', state.theme === 'light');
+      themeToggleIcon.textContent = state.theme === 'light' ? '🌙' : '☀️';
+      themeToggleLabel.textContent = state.theme === 'light' ? 'Dark Mode' : 'Light Mode';
+      localStorage.setItem('leadgen-theme', state.theme);
+    }
+
+    function initTheme() {
+      const savedTheme = localStorage.getItem('leadgen-theme') || 'dark';
+      applyTheme(savedTheme);
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      applyTheme(state.theme === 'light' ? 'dark' : 'light');
+    });
+    initTheme();
 
     // ── Mode Switching ────────────────────────────────────────────────────────
     function setMode(mode) {
@@ -524,6 +683,188 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+
+    function prettifyDropReason(reason) {
+      return String(reason || 'unknown_reason')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (match) => match.toUpperCase());
+    }
+
+    function setObservabilityMetric(element, value) {
+      if (!element) return;
+      const numeric = Number(value);
+      element.textContent = Number.isFinite(numeric) ? String(numeric) : '0';
+    }
+
+    function resetObservability() {
+      [obsDiscovered, obsWhitelisted, obsCorporate, obsVerified, obsExtracted, obsReturned].forEach((el) => setObservabilityMetric(el, 0));
+      if (obsQueryList) obsQueryList.innerHTML = '<div class="text-lv-600 italic">Generated queries will appear here after a run.</div>';
+      if (obsTargetList) obsTargetList.innerHTML = '<div class="text-lv-600 italic">No fetched targets were recorded for this run.</div>';
+      if (obsDropReasons) obsDropReasons.innerHTML = '<div class="text-lv-600 italic">Drop reasons will appear here after a run.</div>';
+      state.lastRunJson = null;
+      state.lastRunFilename = '';
+      state.lastRunQueryPreview = [];
+      viewRunJsonBtn.disabled = true;
+      downloadRunJsonBtn.disabled = true;
+    }
+
+    function buildClientQueryPreview(mode, industry, location, targetRole) {
+      if (mode === 'velit') {
+        return [
+          `"van upfitter" "${location}" official website`,
+          `"van conversion company" "${location}" official website`,
+          `"camper van builder" "${location}" official website`,
+          `"rv upfitter" "${location}" official website`,
+          `"sprinter van conversion" "${location}" official website`,
+          targetRole ? `"${targetRole}" "${location}" van upfitter linkedin` : `"founder" "${location}" van upfitter linkedin`,
+        ].filter(Boolean);
+      }
+      return [
+        `"${industry}" "${location}" company`,
+        `"${industry}" "${location}" official website`,
+        `"${industry}" "${location}" founder linkedin`,
+        `"${industry}" "${location}" contact email`,
+      ].filter(Boolean);
+    }
+
+    function renderQueryDiagnostics(queries) {
+      if (!obsQueryList) return;
+      if (!Array.isArray(queries) || !queries.length) {
+        obsQueryList.innerHTML = '<div class="text-lv-600 italic">No generated queries were returned for this run.</div>';
+        return;
+      }
+      obsQueryList.innerHTML = queries.map((query, index) => `
+        <div class="rounded-xl border border-lv-500/10 bg-lv-900/25 px-3 py-2">
+          <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Query ${index + 1}</div>
+          <div class="text-[11px] text-lv-100 mt-1 break-words">${escapeHtml(String(query || ''))}</div>
+        </div>
+      `).join('');
+    }
+
+    function collectFetchedTargets(workflowState) {
+      const leads = Array.isArray(workflowState?.outputs?.enriched_leads) ? workflowState.outputs.enriched_leads : [];
+      const seen = new Set();
+      const targets = [];
+      leads.forEach((lead) => {
+        const company = String(lead?.company_name || '').trim();
+        const website = String(lead?.company_website || '').trim();
+        const sourceDetails = Array.isArray(lead?.source_details) ? lead.source_details : [];
+        const key = `${company}|${website}`;
+        if ((company || website) && !seen.has(key)) {
+          seen.add(key);
+          targets.push({
+            label: company || website || 'Target',
+            url: website,
+            detail: lead?.contact_person_name || lead?.founder_name || lead?.industry || '',
+          });
+        }
+        sourceDetails.forEach((item) => {
+          const url = String(item?.url || '').trim();
+          const label = String(item?.title || item?.type || item?.stage || 'Source').trim();
+          if (!url || seen.has(url)) return;
+          seen.add(url);
+          targets.push({ label, url, detail: String(item?.value || '').trim() });
+        });
+      });
+      return targets.slice(0, 20);
+    }
+
+    function renderFetchedTargets(targets) {
+      if (!obsTargetList) return;
+      if (!Array.isArray(targets) || !targets.length) {
+        obsTargetList.innerHTML = '<div class="text-lv-600 italic">No fetched targets were recorded for this run.</div>';
+        return;
+      }
+      obsTargetList.innerHTML = targets.map((target, index) => `
+        <div class="rounded-xl border border-lv-500/10 bg-lv-900/25 px-3 py-2">
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Target ${index + 1}</div>
+            ${target.url ? `<a href="${escapeHtml(target.url)}" target="_blank" rel="noopener" class="text-[10px] text-lv-300 underline hover:text-white truncate max-w-[220px]">${escapeHtml(target.url.replace(/^https?:\/\//, ''))}</a>` : ''}
+          </div>
+          <div class="text-[11px] text-lv-100 mt-1">${escapeHtml(target.label || 'Untitled target')}</div>
+          ${target.detail ? `<div class="text-[10px] text-lv-400 mt-1">${escapeHtml(target.detail)}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderDropReasons(dropReasons, pipelineFailure) {
+      if (!obsDropReasons) return;
+      const sections = [];
+      const entries = Object.entries(dropReasons || {}).flatMap(([stage, reasons]) => {
+        if (!reasons || typeof reasons !== 'object') return [];
+        return Object.entries(reasons)
+          .filter(([, count]) => Number(count) > 0)
+          .sort((a, b) => Number(b[1]) - Number(a[1]))
+          .map(([reason, count]) => ({ stage, reason, count: Number(count) }));
+      });
+      if (pipelineFailure?.reason) {
+        sections.push(`
+          <div class="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-red-300 font-bold">Fail Fast</div>
+            <div class="text-[11px] text-red-100 mt-1">${escapeHtml(String(pipelineFailure.stage || 'unknown_stage'))}: ${escapeHtml(String(pipelineFailure.reason))}</div>
+          </div>
+        `);
+      }
+      if (!entries.length && !sections.length) {
+        obsDropReasons.innerHTML = '<div class="text-lv-600 italic">No drop reasons were reported for this run.</div>';
+        return;
+      }
+      sections.push(entries.map((entry) => `
+        <div class="rounded-xl border border-lv-500/10 bg-lv-900/25 px-3 py-2 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">${escapeHtml(prettifyDropReason(entry.stage))}</div>
+            <div class="text-[11px] text-lv-100 truncate">${escapeHtml(prettifyDropReason(entry.reason))}</div>
+          </div>
+          <div class="text-lg font-bold text-white">${escapeHtml(String(entry.count))}</div>
+        </div>
+      `).join(''));
+      obsDropReasons.innerHTML = sections.join('');
+    }
+
+    function renderObservability(workflowMeta, workflowState) {
+      const observability = workflowMeta?.pipeline_observability || {};
+      setObservabilityMetric(obsDiscovered, workflowMeta?.discovered_targets || observability.directories_found || 0);
+      setObservabilityMetric(obsWhitelisted, observability.whitelisted_targets || 0);
+      setObservabilityMetric(obsCorporate, workflowMeta?.corporate_targets || observability.companies_extracted || 0);
+      setObservabilityMetric(obsVerified, workflowMeta?.verified_targets || observability.valid_websites || 0);
+      setObservabilityMetric(obsExtracted, workflowMeta?.scored_targets || observability.contact_info_count || 0);
+      setObservabilityMetric(obsReturned, Array.isArray(workflowState?.outputs?.enriched_leads) ? workflowState.outputs.enriched_leads.length : state.leads.length);
+      renderQueryDiagnostics(
+        observability.directory_queries
+        || workflowMeta?.generated_queries
+        || workflowMeta?.query_preview
+        || state.lastRunQueryPreview
+      );
+      renderFetchedTargets(collectFetchedTargets(workflowState));
+      renderDropReasons(observability.drop_reasons || {}, workflowMeta?.pipeline_failure || workflowState?.workflow?.fail_fast || null);
+    }
+
+    function openRunJsonModal() {
+      if (!state.lastRunJson) return;
+      runJsonContent.textContent = JSON.stringify(state.lastRunJson, null, 2);
+      runJsonModal.classList.remove('hidden');
+    }
+
+    function closeRunJsonModal() {
+      runJsonModal.classList.add('hidden');
+    }
+
+    viewRunJsonBtn.addEventListener('click', openRunJsonModal);
+    downloadRunJsonBtn.addEventListener('click', () => {
+      if (!state.lastRunJson) {
+        addLog('No run JSON available yet.', 'error');
+        return;
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(state.lastRunJson, null, 2)], { type:'application/json' }),
+        state.lastRunFilename || `lead_run_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+      );
+      addLog('Downloaded full run JSON.', 'success');
+    });
+    closeRunJsonBtn.addEventListener('click', closeRunJsonModal);
+    runJsonModal.addEventListener('click', (event) => {
+      if (event.target === runJsonModal) closeRunJsonModal();
+    });
 
     function summarizeApiIssue(message) {
       const text = String(message || '');
@@ -582,187 +923,6 @@
     }
 
     // ── Timer ─────────────────────────────────────────────────────────────────
-    function prettifyDropReason(reason) {
-      return String(reason || 'unknown_reason')
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (match) => match.toUpperCase());
-    }
-
-    function setObservabilityMetric(element, value) {
-      if (!element) return;
-      const numeric = Number(value);
-      element.textContent = Number.isFinite(numeric) ? String(numeric) : '0';
-    }
-
-    function resetObservability() {
-      setObservabilityMetric(obsDirectoriesFound, 0);
-      setObservabilityMetric(obsDirectoriesBlocked, 0);
-      setObservabilityMetric(obsCompaniesExtracted, 0);
-      setObservabilityMetric(obsValidWebsites, 0);
-      setObservabilityMetric(obsContactInfo, 0);
-      setObservabilityMetric(obsLinkedinPeople, 0);
-
-      if (obsDirectoryList) {
-        obsDirectoryList.innerHTML = '<div class="text-lv-600 italic">Run a search to inspect directory-level extraction diagnostics.</div>';
-      }
-      if (obsQueryList) {
-        obsQueryList.innerHTML = '<div class="text-lv-600 italic">Generated queries will appear here after a run.</div>';
-      }
-      if (obsDropReasons) {
-        obsDropReasons.innerHTML = '<div class="text-lv-600 italic">Drop reasons will appear here after a run.</div>';
-      }
-    }
-
-    function renderQueryDiagnostics(queries) {
-      if (!obsQueryList) return;
-      if (!Array.isArray(queries) || !queries.length) {
-        obsQueryList.innerHTML = '<div class="text-lv-600 italic">No generated directory queries were returned for this run.</div>';
-        return;
-      }
-
-      obsQueryList.innerHTML = queries.map((query, index) => `
-        <div class="rounded-xl border border-lv-500/10 bg-lv-900/25 px-3 py-2">
-          <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Query ${index + 1}</div>
-          <div class="text-[11px] text-lv-100 mt-1 break-words">${escapeHtml(String(query || ''))}</div>
-        </div>
-      `).join('');
-    }
-
-    function extractDirectoryDiagnostics(workflowMeta, workflowState) {
-      const extractionMetadata = workflowState?.nodes?.extract_companies?.output?.metadata || {};
-      if (Array.isArray(extractionMetadata.directory_diagnostics)) {
-        return extractionMetadata.directory_diagnostics;
-      }
-      if (Array.isArray(workflowMeta?.directory_diagnostics)) {
-        return workflowMeta.directory_diagnostics;
-      }
-      if (Array.isArray(workflowMeta?.pipeline_observability?.directory_diagnostics)) {
-        return workflowMeta.pipeline_observability.directory_diagnostics;
-      }
-      return [];
-    }
-
-    function renderDirectoryDiagnostics(directoryDiagnostics) {
-      if (!obsDirectoryList) return;
-      if (!Array.isArray(directoryDiagnostics) || !directoryDiagnostics.length) {
-        obsDirectoryList.innerHTML = '<div class="text-lv-600 italic">No directory diagnostics were returned for this run.</div>';
-        return;
-      }
-
-      obsDirectoryList.innerHTML = directoryDiagnostics.map((item) => {
-        const directoryUrl = String(item?.directory_url || item?.url || 'Unknown directory');
-        const hostname = (() => {
-          try {
-            return new URL(directoryUrl).hostname.replace(/^www\./, '');
-          } catch (_) {
-            return directoryUrl;
-          }
-        })();
-        const fetchStatus = item?.fetch_status ?? 'n/a';
-        const blocked = Boolean(item?.blocked_page) || /blocked/i.test(String(item?.drop_reason || ''));
-        const extractedCompanies = Number(item?.extracted_companies || 0);
-        const detailPagesFound = Number(item?.detail_pages_found || 0);
-        const detailPagesFetched = Number(item?.detail_pages_fetched || 0);
-        const dropReason = item?.drop_reason ? prettifyDropReason(item.drop_reason) : 'Passed';
-
-        return `
-          <div class="rounded-xl border ${blocked ? 'border-red-500/20 bg-red-500/5' : 'border-lv-500/10 bg-lv-900/25'} p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="font-semibold text-white truncate">${escapeHtml(hostname)}</div>
-                <a href="${escapeHtml(directoryUrl)}" target="_blank" rel="noopener" class="text-[10px] text-lv-400 hover:text-lv-200 truncate block mt-0.5">${escapeHtml(directoryUrl)}</a>
-              </div>
-              <span class="text-[9px] px-2 py-0.5 rounded ${blocked ? 'bg-red-500/10 border border-red-500/20 text-red-300' : 'bg-green-500/10 border border-green-500/20 text-green-300'} font-bold uppercase tracking-wider">
-                ${blocked ? 'Blocked' : 'Processed'}
-              </span>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-[10px]">
-              <div class="rounded-lg bg-lv-950/40 px-2 py-1.5 border border-lv-500/10">
-                <div class="text-lv-500 uppercase tracking-wider">HTTP</div>
-                <div class="text-white font-semibold mt-0.5">${escapeHtml(String(fetchStatus))}</div>
-              </div>
-              <div class="rounded-lg bg-lv-950/40 px-2 py-1.5 border border-lv-500/10">
-                <div class="text-lv-500 uppercase tracking-wider">Companies</div>
-                <div class="text-white font-semibold mt-0.5">${escapeHtml(String(extractedCompanies))}</div>
-              </div>
-              <div class="rounded-lg bg-lv-950/40 px-2 py-1.5 border border-lv-500/10">
-                <div class="text-lv-500 uppercase tracking-wider">Detail Pages</div>
-                <div class="text-white font-semibold mt-0.5">${escapeHtml(String(detailPagesFound))}</div>
-              </div>
-              <div class="rounded-lg bg-lv-950/40 px-2 py-1.5 border border-lv-500/10">
-                <div class="text-lv-500 uppercase tracking-wider">Fetched</div>
-                <div class="text-white font-semibold mt-0.5">${escapeHtml(String(detailPagesFetched))}</div>
-              </div>
-            </div>
-            <div class="mt-2 text-[10px] text-lv-300">
-              <span class="text-lv-500 uppercase tracking-wider font-bold">Result</span>
-              <span class="ml-2">${escapeHtml(dropReason)}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    function renderDropReasons(dropReasons, pipelineFailure) {
-      if (!obsDropReasons) return;
-      const sections = [];
-      const entries = Object.entries(dropReasons || {}).flatMap(([stage, reasons]) => {
-        if (!reasons || typeof reasons !== 'object') return [];
-        return Object.entries(reasons)
-          .filter(([, count]) => Number(count) > 0)
-          .sort((a, b) => Number(b[1]) - Number(a[1]))
-          .map(([reason, count]) => ({ stage, reason, count: Number(count) }));
-      });
-
-      if (pipelineFailure?.reason) {
-        sections.push(`
-          <div class="rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2">
-            <div class="text-[10px] uppercase tracking-wider text-red-300 font-bold">Fail Fast</div>
-            <div class="text-[11px] text-red-100 mt-1">
-              ${escapeHtml(String(pipelineFailure.stage || 'unknown_stage'))}: ${escapeHtml(String(pipelineFailure.reason))}
-            </div>
-          </div>
-        `);
-      }
-
-      if (!entries.length) {
-        sections.push('<div class="text-lv-600 italic">No drop reasons were reported for this run.</div>');
-        obsDropReasons.innerHTML = sections.join('');
-        return;
-      }
-
-      sections.push(entries.map((entry) => `
-        <div class="rounded-xl border border-lv-500/10 bg-lv-900/25 px-3 py-2 flex items-center justify-between gap-3">
-          <div class="min-w-0">
-            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">${escapeHtml(prettifyDropReason(entry.stage))}</div>
-            <div class="text-[11px] text-lv-100 truncate">${escapeHtml(prettifyDropReason(entry.reason))}</div>
-          </div>
-          <div class="text-lg font-bold text-white">${escapeHtml(String(entry.count))}</div>
-        </div>
-      `).join(''));
-
-      obsDropReasons.innerHTML = sections.join('');
-    }
-
-    function renderObservability(workflowMeta, workflowState) {
-      const observability = workflowMeta?.pipeline_observability || {};
-      const directoryDiagnostics = extractDirectoryDiagnostics(workflowMeta, workflowState);
-      const blockedDirectories = directoryDiagnostics.filter((item) => (
-        Boolean(item?.blocked_page) || /blocked/i.test(String(item?.drop_reason || ''))
-      )).length;
-
-      setObservabilityMetric(obsDirectoriesFound, observability.directories_found || directoryDiagnostics.length || 0);
-      setObservabilityMetric(obsDirectoriesBlocked, blockedDirectories);
-      setObservabilityMetric(obsCompaniesExtracted, observability.companies_extracted || 0);
-      setObservabilityMetric(obsValidWebsites, observability.valid_websites || 0);
-      setObservabilityMetric(obsContactInfo, observability.contact_info_count || 0);
-      setObservabilityMetric(obsLinkedinPeople, observability.linkedin_people_count || 0);
-
-      renderDirectoryDiagnostics(directoryDiagnostics);
-      renderQueryDiagnostics(observability.directory_queries || workflowMeta?.generated_queries || []);
-      renderDropReasons(observability.drop_reasons || {}, workflowMeta?.pipeline_failure || workflowState?.workflow?.fail_fast || null);
-    }
-
     function startTimer() {
       state.startTime = Date.now();
       state.timerInterval = setInterval(() => {
@@ -1436,8 +1596,8 @@
       const sessionId = 'LGEN_' + Math.random().toString(36).substr(2, 9).toUpperCase();
       state.leads = [];
       state.selectedIds.clear();
-      timerDisplay.textContent = '0s';
       resetObservability();
+      timerDisplay.textContent = '0s';
       if (emptyStateMessage) {
         emptyStateMessage.innerHTML = 'Searching for companies, people, and contact paths...';
       }
@@ -1798,7 +1958,6 @@
       state.leads = [];
       state.selectedIds.clear();
       timerDisplay.textContent = '0s';
-      resetObservability();
       if (emptyStateMessage) {
         emptyStateMessage.innerHTML = 'Searching for companies, people, and contact paths...';
       }
@@ -1829,7 +1988,9 @@
           : `Find at least ${targetLeadCount} usable B2B leads in the ${industry} space around ${location}. Search multiple query variations, then enrich each good company with a person and contact path.`;
 
         const requestBody = {
-          workflow_id: 'lead_generation_directory_pipeline',
+          workflow_id: state.mode === 'velit'
+            ? 'velit_lead_generation_pipeline'
+            : 'lead_generation_directory_pipeline',
           session_id: sessionId,
           payload: {
             message: `${discoveryInstruction} ${targetRoleInstruction} ${fallbackInstruction} ${dedupeInstruction} Return results in the required JSON schema only.`,
@@ -1846,6 +2007,7 @@
             }
           }
         };
+        state.lastRunQueryPreview = buildClientQueryPreview(state.mode, industry, location, targetRole);
         leadgenDebug.log('runLeadGen:request_body', requestBody);
         let res;
         let rawText = '';
@@ -1891,6 +2053,10 @@
 
         const workflowState = data.state || {};
         const workflowMeta = data.metadata || {};
+        state.lastRunJson = data;
+        state.lastRunFilename = `lead_run_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        viewRunJsonBtn.disabled = false;
+        downloadRunJsonBtn.disabled = false;
         const pipelineFailure = workflowMeta.pipeline_failure || workflowState?.workflow?.fail_fast || null;
         const workflowSteps = [
           ...(Array.isArray(workflowState?.outputs?.discovery_steps) ? workflowState.outputs.discovery_steps : []),
@@ -1902,8 +2068,6 @@
           ...(Array.isArray(workflowState?.outputs?.enrichment_steps) ? workflowState.outputs.enrichment_steps : [])
         ];
 
-        renderObservability(workflowMeta, workflowState);
-
         if (workflowMeta && Object.keys(workflowMeta).length) {
           leadgenDebug.log('runLeadGen:workflow_metadata', workflowMeta);
           const totalSeconds = Math.max(1, Math.round(Number(workflowMeta.latency_ms || 0) / 1000));
@@ -1912,6 +2076,11 @@
             'info'
           );
         }
+
+        renderObservability(
+          { ...workflowMeta, query_preview: state.lastRunQueryPreview },
+          workflowState
+        );
 
         const pipelineFallback = workflowMeta.pipeline_fallback || workflowMeta.pipeline_observability?.fallback_company_discovery || null;
         if (pipelineFallback && pipelineFallback.activated) {
@@ -2029,6 +2198,13 @@
       lead.contact_person_title = find(['person title', 'contact title', 'job title', 'role', 'designation']) || '';
       lead.founder_name = lead.contact_person_name || find(['founder', 'ceo', 'owner']) || '—';
       lead.linkedin_url = find(['linkedin', 'profile']);
+      lead.company_linkedin_url = find(['company linkedin']) || '';
+      if (!lead.company_linkedin_url && Array.isArray(raw.source_details || raw.sourceDetails)) {
+        const companyLinkedinSource = (raw.source_details || raw.sourceDetails).find(item => String(item?.url || '').includes('linkedin.com/company/'));
+        if (companyLinkedinSource?.url) {
+          lead.company_linkedin_url = companyLinkedinSource.url;
+        }
+      }
       lead.contact_email = find(['email', 'mail']) || '—';
       lead.contact_phone = find(['phone', 'mobile', 'tel']) || '—';
       lead.contact_page = find(['contact page', 'contact url', 'contact form']);
@@ -2086,12 +2262,13 @@
 
     document.getElementById('export-csv-btn').addEventListener('click', () => {
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
-      // Column order matches the Google Sheet: Company Name, Specialty, Contact Name,
-      // Email, Phone, Website, City, State, Zip Code, Status, Notes
+      // Export order keeps the person/contact fields together for Excel review.
       const cols = [
         { header: 'Company Name', key: l => l.company_name },
         { header: 'Specialty',    key: l => l.specialty || l.industry },
-        { header: 'Contact Name', key: l => l.founder_name },
+        { header: 'Contact Name', key: l => l.contact_person_name || l.founder_name },
+        { header: 'Person LinkedIn', key: l => l.linkedin_url },
+        { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
         { header: 'Email',        key: l => l.contact_email },
         { header: 'Phone',        key: l => l.contact_phone },
         { header: 'Website',      key: l => l.company_website },

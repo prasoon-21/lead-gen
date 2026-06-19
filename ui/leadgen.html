@@ -570,6 +570,24 @@
     </div>
   </div>
 
+  <div id="verification-modal" class="fixed inset-0 z-[120] hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="glass w-full max-w-4xl max-h-[85vh] rounded-[28px] shadow-2xl flex flex-col overflow-hidden border border-lv-500/20">
+        <div class="px-7 py-5 border-b border-lv-500/10 flex items-center justify-between bg-lv-950/40">
+          <div>
+            <h2 id="verification-modal-title" class="text-xl font-bold text-white">Email Verification</h2>
+            <p id="verification-modal-subtitle" class="text-xs text-lv-400/70 mt-1">Protocol-level result for the selected email.</p>
+          </div>
+          <button id="close-verification-modal-btn" class="p-2 hover:bg-white/10 rounded-xl transition-colors">
+            <svg class="w-6 h-6 text-lv-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="verification-modal-content" class="p-6 overflow-y-auto bg-lv-950/20"></div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── State ────────────────────────────────────────────────────────────────
     const state = {
@@ -617,6 +635,11 @@
     const runJsonModal = document.getElementById('run-json-modal');
     const closeRunJsonBtn = document.getElementById('close-run-json-btn');
     const runJsonContent = document.getElementById('run-json-content');
+    const verificationModal = document.getElementById('verification-modal');
+    const closeVerificationModalBtn = document.getElementById('close-verification-modal-btn');
+    const verificationModalTitle = document.getElementById('verification-modal-title');
+    const verificationModalSubtitle = document.getElementById('verification-modal-subtitle');
+    const verificationModalContent = document.getElementById('verification-modal-content');
     const obsDiscovered = document.getElementById('obs-discovered');
     const obsWhitelisted = document.getElementById('obs-whitelisted');
     const obsCorporate = document.getElementById('obs-corporate');
@@ -877,6 +900,9 @@
       if (/TAVILY_API_KEY|tavily/i.test(text)) {
         return 'Web search is not configured correctly. Check the Tavily key.';
       }
+      if (/failed to fetch|networkerror|load failed/i.test(text)) {
+        return 'Could not reach the verify API. Restart the backend and open the app from http://127.0.0.1:8000/leads, not from a file path or another frontend port.';
+      }
       return text || 'Something went wrong while talking to the backend.';
     }
 
@@ -952,6 +978,181 @@
     }
 
     // ── Table rendering ───────────────────────────────────────────────────────
+    function verificationToneClasses(status) {
+      const clean = String(status || '').toLowerCase();
+      if (/valid|verified/.test(clean)) return 'text-green-300 border-green-500/20 bg-green-500/10';
+      if (/invalid|fail|error/.test(clean)) return 'text-red-300 border-red-500/20 bg-red-500/10';
+      if (/risk|catch|unknown|warning/.test(clean)) return 'text-amber-300 border-amber-500/20 bg-amber-500/10';
+      return 'text-lv-300 border-lv-500/20 bg-lv-500/10';
+    }
+
+    function isPlaceholderEmail(email) {
+      const clean = String(email || '').trim().toLowerCase();
+      if (!clean || clean === '—') return false;
+      const domain = clean.split('@')[1] || '';
+      return ['user@domain.com', 'email@domain.com', 'user@example.com', 'name@example.com', 'test@example.com'].includes(clean)
+        || ['domain.com', 'example.com', 'example.net', 'example.org'].includes(domain);
+    }
+
+    function hasEmailVerification(lead) {
+      const verification = lead?.email_verification;
+      if (!verification || typeof verification !== 'object') return false;
+      return Boolean(
+        verification.status
+        || verification.normalized_email
+        || verification.message
+        || (Array.isArray(verification.checks) && verification.checks.length)
+      );
+    }
+
+    function getEmailVerificationStatus(lead) {
+      if (hasEmailVerification(lead)) return lead.email_verification.status || 'not verified';
+      return lead.email_status || 'not verified';
+    }
+
+    function openVerificationModal(lead) {
+      if (!lead || !verificationModal || !verificationModalContent) return;
+      const verification = lead.email_verification || {};
+      const checks = Array.isArray(lead.verification_checks)
+        ? lead.verification_checks
+        : (Array.isArray(verification.checks) ? verification.checks : []);
+      const status = hasEmailVerification(lead) ? (verification.status || 'not verified') : 'not verified';
+      const confidence = verification.confidence ?? lead.verification_confidence ?? 0;
+      const email = verification.normalized_email || lead.contact_email || '';
+      const company = lead.company_name || 'Selected lead';
+      const tone = verificationToneClasses(status);
+
+      const summaryItems = [
+        ['Email', email],
+        ['Status', status],
+        ['Confidence', `${confidence}%`],
+        ['Domain', verification.domain || 'n/a'],
+        ['Provider', verification.provider_type || lead.email_provider_type || 'unknown'],
+        ['MX Found', verification.mx_found ? 'yes' : 'no'],
+        ['Selected MX', verification.selected_mx || 'n/a'],
+        ['SMTP Connected', verification.smtp_connected ? 'yes' : 'no'],
+        ['SMTP Verified', verification.smtp_verified ? 'yes' : 'no'],
+        ['Catch-all', verification.catch_all ? 'yes' : 'no'],
+        ['Role Email', verification.is_role_email ? `${verification.role_email_type || 'role'}@` : 'no'],
+        ['Recipient Code', verification.recipient_probe_code || 'n/a'],
+        ['Time', verification.duration_ms ? `${verification.duration_ms} ms` : 'n/a'],
+      ];
+
+      const checksMarkup = checks.length
+        ? checks.map((check, index) => {
+            const checkTone = verificationToneClasses(check.status || 'warning');
+            return `
+              <div class="rounded-xl border border-lv-500/10 bg-lv-950/35 p-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="text-[10px] text-lv-500 uppercase font-bold tracking-wider">Step ${index + 1}</div>
+                    <div class="text-sm text-lv-100 font-bold mt-1">${escapeHtml(prettifyDropReason(check.name || 'check'))}</div>
+                  </div>
+                  <span class="px-2 py-1 rounded-md border text-[10px] uppercase font-bold ${checkTone}">${escapeHtml(check.status || 'unknown')}</span>
+                </div>
+                <div class="text-xs text-lv-400 mt-3">${escapeHtml(check.detail || 'No detail returned.')}</div>
+                ${check.response_code ? `<div class="text-[10px] text-lv-500 mt-2">Response code: ${escapeHtml(check.response_code)}</div>` : ''}
+                ${check.response_message ? `<div class="text-[10px] text-lv-600 mt-1 break-words">Server message: ${escapeHtml(check.response_message)}</div>` : ''}
+              </div>
+            `;
+          }).join('')
+        : '<div class="rounded-xl border border-lv-500/10 bg-lv-950/35 p-4 text-sm text-lv-500">No protocol checks were returned for this email.</div>';
+
+      verificationModalTitle.textContent = 'Email Verification Result';
+      verificationModalSubtitle.textContent = `${company} - ${email || 'No email'}`;
+      verificationModalContent.innerHTML = `
+        <div class="space-y-5">
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="text-[10px] text-lv-500 uppercase font-bold tracking-wider">Final Decision</div>
+                <div class="text-xl text-white font-bold mt-1">${escapeHtml(status)}</div>
+                <div class="text-xs text-lv-400 mt-2">${escapeHtml(verification.message || lead.verification_message || 'No message returned.')}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-[10px] text-lv-500 uppercase font-bold tracking-wider">Confidence</div>
+                <div class="text-3xl text-lv-100 font-bold">${escapeHtml(String(confidence))}%</div>
+                <span class="inline-flex mt-2 px-2 py-1 rounded-md border text-[10px] uppercase font-bold ${tone}">${escapeHtml(status)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            ${summaryItems.map(([label, value]) => `
+              <div class="rounded-xl border border-lv-500/10 bg-lv-950/35 px-4 py-3">
+                <div class="text-[10px] text-lv-500 uppercase font-bold tracking-wider">${escapeHtml(label)}</div>
+                <div class="text-sm text-lv-100 mt-1 break-words">${escapeHtml(value)}</div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div>
+            <h3 class="text-sm text-lv-300 font-bold uppercase tracking-wider mb-3">Protocol Steps</h3>
+            <div class="space-y-3">${checksMarkup}</div>
+          </div>
+        </div>
+      `;
+      verificationModal.classList.remove('hidden');
+    }
+
+    function buildVerificationDetailsMarkup(lead) {
+      const verification = lead.email_verification || {};
+      const checks = Array.isArray(lead.verification_checks)
+        ? lead.verification_checks
+        : (Array.isArray(verification.checks) ? verification.checks : []);
+      if (!hasEmailVerification(lead) && !checks.length && !lead.verification_confidence && !lead.email_provider_type) return '';
+
+      const provider = lead.email_provider_type || verification.provider_type || 'unknown';
+      const confidence = lead.verification_confidence || verification.confidence || 0;
+      const catchAll = Boolean(lead.email_catch_all ?? verification.catch_all);
+      const roleType = lead.email_role_type || verification.role_email_type || '';
+      const isRole = Boolean(lead.email_is_role ?? verification.is_role_email);
+      const mxFound = Boolean(lead.email_mx_found ?? verification.mx_found);
+      const smtpConnected = Boolean(lead.email_smtp_connected ?? verification.smtp_connected);
+      const recipientCode = lead.email_recipient_code || verification.recipient_probe_code || '';
+
+      const protocolPills = [
+        ['DNS/MX', mxFound ? 'ok' : 'fail'],
+        ['SMTP', smtpConnected ? 'connected' : 'blocked'],
+        ['Recipient', recipientCode || 'n/a'],
+        ['Catch-all', catchAll ? 'yes' : 'no'],
+        ['Role', isRole ? `${roleType || 'role'}@` : 'no'],
+        ['Provider', provider],
+      ];
+
+      const checkMarkup = checks.slice(0, 5).map((check) => {
+        const status = String(check.status || '').toLowerCase();
+        const tone = status === 'passed'
+          ? 'text-green-300 border-green-500/20 bg-green-500/10'
+          : status === 'failed'
+            ? 'text-red-300 border-red-500/20 bg-red-500/10'
+            : 'text-amber-300 border-amber-500/20 bg-amber-500/10';
+        return `
+          <div class="flex items-start justify-between gap-2 text-[9px]">
+            <span class="font-bold uppercase tracking-wider ${tone} border rounded px-1.5 py-0.5">${escapeHtml(check.name || 'check')}</span>
+            <span class="text-lv-500 text-right max-w-[160px] truncate" title="${escapeHtml(check.detail || '')}">${escapeHtml(check.detail || '')}</span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="mt-2 rounded-lg border border-lv-500/10 bg-lv-950/35 p-2 space-y-2 max-w-[260px]">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[9px] text-lv-400 uppercase font-bold tracking-wider">Protocol Check</span>
+            <span class="text-[9px] text-lv-200 font-bold">${escapeHtml(String(confidence))}%</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            ${protocolPills.map(([label, value]) => `
+              <span class="text-[8px] px-1.5 py-0.5 rounded border border-lv-500/20 bg-lv-500/10 text-lv-300">
+                ${escapeHtml(label)}: ${escapeHtml(String(value))}
+              </span>
+            `).join('')}
+          </div>
+          ${checkMarkup ? `<div class="space-y-1">${checkMarkup}</div>` : ''}
+        </div>
+      `;
+    }
+
     function renderTable() {
       document.getElementById('empty-state').classList.toggle('hidden', state.leads.length > 0);
       // Remove all non-empty-state rows
@@ -1541,8 +1742,22 @@
         leadgenDebug.log('verifyLead:response_body', data);
         if (!res.ok) throw new Error(data.detail || 'Verification failed');
 
-        lead.verification_status = data.verification?.status || lead.verification_status;
-        lead.verification_message = data.verification?.message || '';
+        const verification = data.verification || {};
+        lead.email_verification = verification;
+        lead.verification_checks = Array.isArray(verification.checks) ? verification.checks : [];
+        lead.verification_status = verification.status || lead.verification_status;
+        lead.email_status = lead.verification_status;
+        lead.verification_message = verification.message || '';
+        lead.verification_confidence = verification.confidence ?? lead.verification_confidence;
+        lead.email_provider_type = verification.provider_type || '';
+        lead.email_mx_found = Boolean(verification.mx_found);
+        lead.email_smtp_connected = Boolean(verification.smtp_connected);
+        lead.email_smtp_verified = Boolean(verification.smtp_verified);
+        lead.email_catch_all = Boolean(verification.catch_all);
+        lead.email_is_role = Boolean(verification.is_role_email);
+        lead.email_role_type = verification.role_email_type || '';
+        lead.email_recipient_code = verification.recipient_probe_code || '';
+        lead.email_verification_duration_ms = verification.duration_ms || 0;
         if (data.lead_quality) {
           lead.quality_score = data.lead_quality.quality_score ?? lead.quality_score;
           lead.confidence = data.lead_quality.confidence || lead.confidence;
@@ -1553,6 +1768,7 @@
           lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
           lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
         }
+        addLog(`Email verification complete for <strong>${escapeHtml(lead.company_name)}</strong>: <strong>${escapeHtml(lead.verification_status)}</strong>.`, /valid/i.test(lead.verification_status) ? 'success' : 'info');
         leadgenDebug.log('verifyLead:lead_updated', lead);
       } catch (err) {
         leadgenDebug.error('verifyLead:exception', {
@@ -1798,6 +2014,7 @@
         const personName = lead.contact_person_name || lead.founder_name || '—';
         const personTitle = lead.contact_person_title || 'Role not found';
         const email = lead.contact_email || '—';
+        const displayEmail = isPlaceholderEmail(email) ? '—' : email;
         const phone = lead.contact_phone || '—';
         const linkedin = lead.linkedin_url || '';
         const contactPage = lead.contact_page || '';
@@ -1805,8 +2022,9 @@
         const confidence = String(lead.confidence || 'low').toLowerCase();
         const qualityScore = Number(lead.quality_score || 0);
         const qualityStatus = lead.quality_status || 'unreviewed';
-        const verificationStatus = lead.verification_status || lead.email_status || 'not verified';
+        const verificationStatus = getEmailVerificationStatus(lead);
         const qualityNotes = Array.isArray(lead.quality_notes) ? lead.quality_notes.join(' | ') : (lead.quality_notes || '');
+        const verificationDetailsMarkup = buildVerificationDetailsMarkup(lead);
 
         const confidenceTone = confidence === 'high'
           ? 'text-green-300 bg-green-500/10 border-green-500/20'
@@ -1843,7 +2061,7 @@
             </div>
           </td>
           <td class="px-5 py-4 align-top">
-            <div class="text-[11px] text-lv-200">${escapeHtml(email)}</div>
+            <div class="text-[11px] text-lv-200">${escapeHtml(displayEmail)}</div>
             <div class="text-[11px] text-lv-400 mt-1">${escapeHtml(phone)}</div>
             <div class="flex flex-wrap gap-2 mt-2">
               <span class="px-2 py-1 rounded-md border text-[9px] uppercase font-bold tracking-wider ${confidenceTone}">${escapeHtml(confidence)}</span>
@@ -1853,9 +2071,12 @@
             <div class="text-[10px] text-lv-600 mt-1">${escapeHtml(source)}</div>
             ${qualityNotes ? `<div class="text-[9px] text-lv-600 mt-1 max-w-[220px]">${escapeHtml(qualityNotes)}</div>` : ''}
             ${lead.verifying ? `<div class="text-[10px] text-lv-500 mt-2">Checking email...</div>` : ''}
-            ${(!lead.verification_status && !lead.verifying && lead.contact_email && lead.contact_email !== '—')
+            ${(!hasEmailVerification(lead) && !lead.verifying && displayEmail !== '—')
               ? `<button onclick="window.verifyLeadByIndex(${index})" class="mt-2 px-2 py-1 rounded-md bg-lv-500/10 border border-lv-500/30 text-[9px] font-bold text-lv-300 hover:bg-lv-500/20 transition-all uppercase">Verify</button>`
               : ''}
+            ${hasEmailVerification(lead) ? `<button onclick="window.openVerificationByIndex(${index})" class="mt-2 ml-2 px-2 py-1 rounded-md bg-sky-500/10 border border-sky-500/30 text-[9px] font-bold text-sky-300 hover:bg-sky-500/20 transition-all uppercase">Details</button>` : ''}
+            ${lead.verification_message ? `<div class="text-[9px] text-lv-500 mt-1 max-w-[240px]" title="${escapeHtml(lead.verification_message)}">${escapeHtml(lead.verification_message)}</div>` : ''}
+            ${verificationDetailsMarkup}
           </td>
           <td class="px-5 py-4 align-top">
             <div class="text-[11px] text-lv-200 font-medium">${escapeHtml(lead.location || '—')}</div>
@@ -1874,9 +2095,14 @@
 
       leadsCount.textContent = state.leads.length;
       usableCount.textContent = state.leads.filter(lead => lead.usable !== false && !lead.rejected).length;
-      verifiedCount.textContent = state.leads.filter(lead => /valid|verified/i.test(lead.verification_status || lead.email_status || '')).length;
+      verifiedCount.textContent = state.leads.filter(lead => /valid|verified/i.test(getEmailVerificationStatus(lead))).length;
       updateSelectedCount();
     }
+
+    window.openVerificationByIndex = (index) => {
+      const lead = state.leads[index];
+      if (lead) openVerificationModal(lead);
+    };
 
     async function verifyLead(lead) {
       lead.verifying = true;
@@ -1908,8 +2134,22 @@
         leadgenDebug.log('verifyLead:response_body', data);
         if (!res.ok) throw new Error(data.detail || 'Verification failed');
 
-        lead.verification_status = data.verification?.status || lead.verification_status;
-        lead.verification_message = data.verification?.message || '';
+        const verification = data.verification || {};
+        lead.email_verification = verification;
+        lead.verification_checks = Array.isArray(verification.checks) ? verification.checks : [];
+        lead.verification_status = verification.status || lead.verification_status;
+        lead.email_status = lead.verification_status;
+        lead.verification_message = verification.message || '';
+        lead.verification_confidence = verification.confidence ?? lead.verification_confidence;
+        lead.email_provider_type = verification.provider_type || '';
+        lead.email_mx_found = Boolean(verification.mx_found);
+        lead.email_smtp_connected = Boolean(verification.smtp_connected);
+        lead.email_smtp_verified = Boolean(verification.smtp_verified);
+        lead.email_catch_all = Boolean(verification.catch_all);
+        lead.email_is_role = Boolean(verification.is_role_email);
+        lead.email_role_type = verification.role_email_type || '';
+        lead.email_recipient_code = verification.recipient_probe_code || '';
+        lead.email_verification_duration_ms = verification.duration_ms || 0;
         if (data.lead_quality) {
           lead.quality_score = data.lead_quality.quality_score ?? lead.quality_score;
           lead.confidence = data.lead_quality.confidence || lead.confidence;
@@ -1920,6 +2160,8 @@
           lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
           lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
         }
+        addLog(`Email verification complete for <strong>${escapeHtml(lead.company_name)}</strong>: <strong>${escapeHtml(lead.verification_status)}</strong>.`, /valid/i.test(lead.verification_status) ? 'success' : 'info');
+        openVerificationModal(lead);
       } catch (err) {
         leadgenDebug.error('verifyLead:exception', { company_name: lead.company_name, email: lead.contact_email, message: err.message, error: String(err) });
         addLog(`Verification failed for <strong>${escapeHtml(lead.company_name)}</strong>: ${escapeHtml(summarizeApiIssue(err.message))}`, 'error');
@@ -2206,6 +2448,7 @@
         }
       }
       lead.contact_email = find(['email', 'mail']) || '—';
+      if (isPlaceholderEmail(lead.contact_email)) lead.contact_email = '—';
       lead.contact_phone = find(['phone', 'mobile', 'tel']) || '—';
       lead.contact_page = find(['contact page', 'contact url', 'contact form']);
       lead.source = find(['source', 'origin']) || 'web';
@@ -2221,6 +2464,18 @@
       lead.email_status = find(['email status']);
       lead.verification_status = find(['verification status']);
       lead.verification_message = find(['verification message']);
+      const emailVerificationPayload = find(['email verification']);
+      lead.email_verification = emailVerificationPayload && typeof emailVerificationPayload === 'object' ? emailVerificationPayload : null;
+      lead.verification_checks = find(['verification checks', 'checks']) || [];
+      lead.verification_confidence = find(['verification confidence', 'email confidence']) || '';
+      lead.email_provider_type = find(['email provider', 'provider type']) || '';
+      lead.email_mx_found = find(['mx found']);
+      lead.email_smtp_connected = find(['smtp connected']);
+      lead.email_smtp_verified = find(['smtp verified']);
+      lead.email_catch_all = find(['catch all', 'catch_all']);
+      lead.email_is_role = find(['role email', 'is role email']);
+      lead.email_role_type = find(['role email type', 'role_email_type']);
+      lead.email_recipient_code = find(['recipient code', 'recipient probe code']);
       lead.industry = find(['industry', 'type', 'specialty', 'sector']) || (state.mode === 'velit' ? 'Upfitter' : (industryInput.value.trim() || 'General'));
       lead.specialty = lead.industry;
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
@@ -2270,6 +2525,12 @@
         { header: 'Person LinkedIn', key: l => l.linkedin_url },
         { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
         { header: 'Email',        key: l => l.contact_email },
+        { header: 'Email Verification Status', key: l => getEmailVerificationStatus(l) === 'not verified' ? '' : getEmailVerificationStatus(l) },
+        { header: 'Email Verification Confidence', key: l => l.verification_confidence || '' },
+        { header: 'Email Verification Message', key: l => l.verification_message || '' },
+        { header: 'Email Provider', key: l => l.email_provider_type || '' },
+        { header: 'Email Catch All', key: l => l.email_catch_all === true ? 'yes' : (l.email_catch_all === false ? 'no' : '') },
+        { header: 'Role Email', key: l => l.email_is_role === true ? 'yes' : (l.email_is_role === false ? 'no' : '') },
         { header: 'Phone',        key: l => l.contact_phone },
         { header: 'Website',      key: l => l.company_website },
         { header: 'City',         key: l => l.city },
@@ -2298,6 +2559,12 @@
 
     deepResBtn.addEventListener('click', runDeepResearch);
     closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+    closeVerificationModalBtn.addEventListener('click', () => verificationModal.classList.add('hidden'));
+    verificationModal.addEventListener('click', (event) => {
+      if (event.target === verificationModal || event.target.classList.contains('bg-black/80')) {
+        verificationModal.classList.add('hidden');
+      }
+    });
 
     selectAllCheck.addEventListener('change', (e) => {
       if (e.target.checked) {

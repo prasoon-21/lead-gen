@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk Email Verifier</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --panel-soft: #f0f5ff;
+      --text: #172033;
+      --muted: #66728a;
+      --line: #d9e2f0;
+      --blue: #1e5bff;
+      --green: #0f8f65;
+      --amber: #b7791f;
+      --red: #c2413b;
+      --ink: #0d1526;
+      --shadow: 0 18px 46px rgba(23, 32, 51, 0.10);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(135deg, rgba(30, 91, 255, 0.08), transparent 34%),
+        linear-gradient(315deg, rgba(15, 143, 101, 0.10), transparent 30%),
+        var(--bg);
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 22px;
+      margin-bottom: 24px;
+    }
+
+    .title-block {
+      max-width: 720px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border: 1px solid #cfe0ff;
+      border-radius: 999px;
+      background: #edf4ff;
+      color: #1746b8;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(30px, 5vw, 52px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .subtext {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 780px;
+    }
+
+    .nav-link {
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.7fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .upload-panel {
+      padding: 24px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #34425d;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input[type="file"],
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      border: 1px solid #cfd9ea;
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      font: inherit;
+      padding: 13px 14px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(30, 91, 255, 0.12);
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: 1fr 150px;
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .drop {
+      border: 1.5px dashed #9bb4df;
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 26px;
+      transition: border-color 160ms ease, background 160ms ease;
+    }
+
+    .drop.dragging {
+      border-color: var(--blue);
+      background: #e6efff;
+    }
+
+    .file-name {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 13px 18px;
+      transition: transform 140ms ease, opacity 140ms ease, box-shadow 140ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .primary {
+      background: var(--blue);
+      color: white;
+      box-shadow: 0 12px 24px rgba(30, 91, 255, 0.22);
+    }
+
+    .secondary {
+      background: #eef2f7;
+      color: #23304a;
+      border: 1px solid #d8e0eb;
+    }
+
+    .summary {
+      padding: 22px;
+    }
+
+    .summary h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .log {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      min-height: 160px;
+      max-height: 260px;
+      overflow: auto;
+      padding: 12px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .status-line {
+      padding: 10px 0;
+      border-bottom: 1px solid #e9eef7;
+    }
+
+    .status-line:last-child {
+      border-bottom: 0;
+    }
+
+    .ok { color: var(--green); }
+    .warn { color: var(--amber); }
+    .bad { color: var(--red); }
+
+    .note {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #fff8e8;
+      border: 1px solid #f0d9a8;
+      color: #6f4e12;
+      font-size: 14px;
+    }
+
+    @media (max-width: 860px) {
+      header,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .fields {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="title-block">
+        <div class="eyebrow">Bulk verifier</div>
+        <h1>Excel Email Verification</h1>
+        <p class="subtext">
+          Upload an Excel workbook, verify the emails with the project SMTP/DNS verifier, and download the same workbook with a new verification status column.
+        </p>
+      </div>
+      <a class="nav-link" href="/leads">Back to lead generator</a>
+    </header>
+
+    <section class="layout">
+      <form id="verify-form" class="panel upload-panel">
+        <div id="drop-zone" class="drop">
+          <label for="excel-file">Excel file</label>
+          <input id="excel-file" name="file" type="file" accept=".xlsx,.xlsm" required />
+          <div id="file-name" class="file-name">No file selected</div>
+        </div>
+
+        <div class="fields">
+          <div>
+            <label for="email-column">Email column header</label>
+            <input id="email-column" name="email_column" type="text" placeholder="Auto-detect, or enter Email / Contact Email" />
+          </div>
+          <div>
+            <label for="concurrency">Parallel checks</label>
+            <input id="concurrency" name="max_concurrency" type="number" min="1" max="8" value="4" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="verify-btn" class="primary" type="submit">Verify Excel</button>
+          <button id="reset-btn" class="secondary" type="button">Reset</button>
+        </div>
+
+        <div class="note">
+          For best results, use a sheet with a clear email column like <strong>Email</strong>, <strong>Contact Email</strong>, or <strong>Work Email</strong>. The output adds <strong>email_verification_status</strong>.
+        </div>
+      </form>
+
+      <aside class="panel summary">
+        <h2>Run Summary</h2>
+        <div class="metric-grid">
+          <div class="metric">
+            <span>Total</span>
+            <strong id="total-count">0</strong>
+          </div>
+          <div class="metric">
+            <span>Verified</span>
+            <strong id="valid-count" class="ok">0</strong>
+          </div>
+          <div class="metric">
+            <span>Review</span>
+            <strong id="risky-count" class="warn">0</strong>
+          </div>
+          <div class="metric">
+            <span>Invalid</span>
+            <strong id="invalid-count" class="bad">0</strong>
+          </div>
+        </div>
+        <div id="log" class="log">
+          Waiting for an Excel upload.
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('verify-form');
+    const fileInput = document.getElementById('excel-file');
+    const fileName = document.getElementById('file-name');
+    const verifyBtn = document.getElementById('verify-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const dropZone = document.getElementById('drop-zone');
+    const log = document.getElementById('log');
+    const totalCount = document.getElementById('total-count');
+    const validCount = document.getElementById('valid-count');
+    const riskyCount = document.getElementById('risky-count');
+    const invalidCount = document.getElementById('invalid-count');
+
+    function setCounts(summary = {}) {
+      const counts = summary.status_counts || {};
+      totalCount.textContent = summary.total_emails || 0;
+      validCount.textContent = counts.valid || 0;
+      riskyCount.textContent = counts.needs_manual_review || counts.risky || 0;
+      invalidCount.textContent = counts.invalid || 0;
+    }
+
+    function setLog(lines) {
+      log.innerHTML = lines.map(line => `<div class="status-line">${line}</div>`).join('');
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function selectedFile() {
+      return fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    }
+
+    fileInput.addEventListener('change', () => {
+      const file = selectedFile();
+      fileName.textContent = file ? `${file.name} (${Math.ceil(file.size / 1024)} KB)` : 'No file selected';
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.add('dragging');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, event => {
+        event.preventDefault();
+        dropZone.classList.remove('dragging');
+      });
+    });
+
+    dropZone.addEventListener('drop', event => {
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file) return;
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files = transfer.files;
+      fileInput.dispatchEvent(new Event('change'));
+    });
+
+    resetBtn.addEventListener('click', () => {
+      form.reset();
+      fileName.textContent = 'No file selected';
+      setCounts();
+      setLog(['Waiting for an Excel upload.']);
+    });
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const file = selectedFile();
+      if (!file) {
+        setLog(['Select a .xlsx or .xlsm file first.']);
+        return;
+      }
+
+      const formData = new FormData(form);
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = 'Verifying...';
+      setCounts();
+      setLog([
+        `Uploading ${file.name}.`,
+        'Running DNS, MX, SMTP, catch-all, and recipient checks.',
+        'This can take time for 100 emails because real mail servers are being contacted.'
+      ]);
+
+      try {
+        const response = await fetch('/api/email-verification/bulk-excel', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          let detail = await response.text();
+          try {
+            detail = JSON.parse(detail).detail || detail;
+          } catch (_) {}
+          throw new Error(detail || `Request failed with status ${response.status}`);
+        }
+
+        const summaryHeader = response.headers.get('x-email-verification-summary');
+        const summary = summaryHeader ? JSON.parse(summaryHeader) : {};
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition') || '';
+        const filenameMatch = disposition.match(/filename="([^"]+)"/i);
+        const outputName = filenameMatch ? filenameMatch[1] : `verified_${file.name.replace(/\.(xlsx|xlsm)$/i, '')}.xlsx`;
+
+        setCounts(summary);
+        const sheetLines = (summary.sheets || []).map(item => {
+          const found = item.email_column_found ? 'email column found' : 'email column missing';
+          return `${item.sheet}: ${found}, ${item.emails || 0} email(s).`;
+        });
+        setLog([
+          `Completed ${summary.total_emails || 0} email verification check(s).`,
+          `Downloaded ${outputName}.`,
+          ...sheetLines
+        ]);
+        downloadBlob(blob, outputName);
+      } catch (error) {
+        setLog([
+          `<span class="bad">Verification failed:</span> ${String(error.message || error)}`,
+          'Make sure the backend is running and open this page from the backend URL, for example http://127.0.0.1:8000/email-verifier.'
+        ]);
+      } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify Excel';
+      }
+    });
+  </script>
+</body>
+</html>

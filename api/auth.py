@@ -43,6 +43,9 @@ def is_valid_api_key(
 
 
 async def api_key_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
 

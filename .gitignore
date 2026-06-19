@@ -35,6 +35,11 @@ tmp_*
 *.bak
 *.orig
 *.rej
+scratch/
+leads_*.xlsx
+verified_*.xlsx
+leads_*.csv
+lead_run_*.json
 
 # OS
 .DS_Store

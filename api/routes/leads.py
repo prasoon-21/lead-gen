@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any
 import json
 import os
 from api.state import get_state
+from core.services.lead_quality_service import score_lead
 from core.services.lead_service import LeadService
 from core.utils.email_verify import verify_email_legitimacy
 from core.utils.spam_scorer import calculate_spam_score
@@ -18,6 +20,7 @@ class EmailVerifyRequest(BaseModel):
     email: str
     subject: str = ""
     body: str = ""
+    lead: Dict[str, Any] = Field(default_factory=dict)
 
 class LinkedInSessionRequest(BaseModel):
     cookie_value: str
@@ -34,13 +37,37 @@ async def export_leads(request: LeadExportRequest):
 
 @router.post("/verify")
 async def verify_lead(request: EmailVerifyRequest):
-    verification = verify_email_legitimacy(request.email)
+    try:
+        verification = await run_in_threadpool(verify_email_legitimacy, request.email)
+    except Exception as exc:
+        verification = {
+            "email": request.email,
+            "status": "error",
+            "confidence": 0,
+            "message": f"Email verification failed internally: {type(exc).__name__}",
+            "checks": [
+                {
+                    "name": "verification_runtime",
+                    "status": "failed",
+                    "detail": str(exc),
+                }
+            ],
+        }
+    lead_quality = {}
+    if request.lead:
+        lead_stub = dict(request.lead)
+        lead_stub["contact_email"] = request.email
+        lead_stub["verification_status"] = verification.get("status", "")
+        lead_stub["verification_message"] = verification.get("message", "")
+        lead_quality = score_lead(lead_stub, verification=verification)
+
     spam_analysis = {}
     if request.subject or request.body:
         spam_analysis = calculate_spam_score(request.subject, request.body)
     
     return {
         "verification": verification,
+        "lead_quality": lead_quality,
         "spam_analysis": spam_analysis
     }
 

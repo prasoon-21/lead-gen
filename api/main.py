@@ -12,7 +12,7 @@ from api.state import state
 from api.routes import (
     health, learning, image, blocks, agent,
     campus_learning_agent, agent_kernel, workflow,
-    admin, agent_directory, studio, leads
+    admin, agent_directory, studio, leads, email_verification
 )
 from core.adapters.router import build_adapter_from_env
 from core.retrieval.embeddings import EmbeddingService
@@ -190,6 +190,11 @@ async def leads_page():
     return FileResponse("ui/leadgen.html")
 
 
+@app.get("/email-verifier", include_in_schema=False)
+async def email_verifier_page():
+    return FileResponse("ui/email_verifier.html")
+
+
 app.include_router(health.router,                                              tags=["Health"])
 app.include_router(learning.router,          prefix="/api/learning/chat",     tags=["Learning"])
 app.include_router(image.router,             prefix="/api/image",             tags=["Image"])
@@ -202,3 +207,4 @@ app.include_router(admin.router,             prefix="/api/admin",             ta
 app.include_router(agent_directory.router,   prefix="/api/directory",         tags=["Agent Directory"])
 app.include_router(studio.router,            prefix="/api/studio",            tags=["Studio"])
 app.include_router(leads.router,             prefix="/api/leads",             tags=["Leads"])
+app.include_router(email_verification.router, prefix="/api/email-verification", tags=["Email Verification"])

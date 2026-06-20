@@ -54,19 +54,19 @@
     }
 
     body.light-theme {
-      --bg-main: #f4f7ff;
-      --bg-grad-a: rgba(99,102,241,.18);
-      --bg-grad-b: rgba(14,165,233,.14);
-      --text-main: #0f172a;
-      --glass-bg: rgba(255, 255, 255, 0.96);
-      --glass-border: rgba(99,102,241,.22);
-      --field-bg: #ffffff;
-      --field-border: rgba(99,102,241,.28);
+      --bg-main: #eef3ff;
+      --bg-grad-a: rgba(79,70,229,.22);
+      --bg-grad-b: rgba(14,116,144,.12);
+      --text-main: #111827;
+      --glass-bg: rgba(255, 255, 255, 0.98);
+      --glass-border: rgba(71,85,105,.24);
+      --field-bg: #f8fafc;
+      --field-border: rgba(100,116,139,.42);
       --field-text: #0f172a;
-      --field-placeholder: rgba(51,65,85,.72);
-      --row-hover: rgba(99,102,241,.11);
-      --scroll-thumb: #a5b4fc;
-      --scroll-thumb-hover: #818cf8;
+      --field-placeholder: rgba(71,85,105,.78);
+      --row-hover: rgba(219,234,254,.78);
+      --scroll-thumb: #64748b;
+      --scroll-thumb-hover: #475569;
       --btn-text: #ffffff;
     }
 
@@ -180,7 +180,7 @@
     }
 
     body.light-theme .glass {
-      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
     }
 
     body.light-theme .theme-toggle {
@@ -203,35 +203,133 @@
       box-shadow: 0 0 0 4px rgba(99,102,241,.14);
     }
 
+    body.light-theme nav {
+      background: rgba(255,255,255,.96);
+      border-color: rgba(148,163,184,.35) !important;
+      box-shadow: 0 10px 28px rgba(15,23,42,.08);
+    }
+
+    body.light-theme nav h1 {
+      background: none !important;
+      -webkit-text-fill-color: #312e81;
+      color: #312e81 !important;
+    }
+
+    body.light-theme section.glass,
+    body.light-theme .glass.rounded-3xl,
+    body.light-theme .glass.rounded-\[28px\] {
+      background: #ffffff;
+      border-color: rgba(148,163,184,.38);
+    }
+
+    body.light-theme table {
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    body.light-theme thead tr {
+      background: #dbe4f0 !important;
+      border-color: rgba(100,116,139,.34) !important;
+    }
+
+    body.light-theme thead th {
+      color: #1f2a44 !important;
+      font-weight: 800 !important;
+    }
+
+    body.light-theme tbody {
+      background: #ffffff;
+    }
+
+    body.light-theme tbody tr {
+      border-color: rgba(203,213,225,.85) !important;
+    }
+
+    body.light-theme input[type="checkbox"] {
+      background-color: #ffffff !important;
+      border-color: #64748b !important;
+    }
+
+    body.light-theme .btn-run {
+      background: linear-gradient(135deg, #4f46e5 0%, #2563eb 55%, #0891b2 100%);
+      color: #ffffff;
+      box-shadow: 0 12px 28px rgba(37,99,235,.22);
+    }
+
+    body.light-theme .bg-lv-600,
+    body.light-theme .hover\:bg-lv-500:hover {
+      background-color: #4f46e5 !important;
+      color: #ffffff !important;
+    }
+
+    body.light-theme .shadow-lv-500\/20,
+    body.light-theme .shadow-lv-500\/25 {
+      box-shadow: 0 10px 24px rgba(79,70,229,.22) !important;
+    }
+
     body.light-theme .text-white { color: #111827 !important; }
     body.light-theme .hover\:text-white:hover { color: #0f172a !important; }
     body.light-theme .text-lv-100 { color: #111827 !important; }
-    body.light-theme .text-lv-200 { color: #1e293b !important; }
-    body.light-theme .text-lv-300 { color: #334155 !important; }
-    body.light-theme .text-lv-300\/60 { color: rgba(51, 65, 85, 0.82) !important; }
-    body.light-theme .text-lv-300\/70 { color: rgba(51, 65, 85, 0.88) !important; }
-    body.light-theme .text-lv-400 { color: #475569 !important; }
-    body.light-theme .text-lv-400\/60 { color: rgba(71, 85, 105, 0.82) !important; }
-    body.light-theme .text-lv-400\/70 { color: rgba(71, 85, 105, 0.88) !important; }
-    body.light-theme .text-lv-500 { color: #64748b !important; }
-    body.light-theme .text-lv-500\/80 { color: rgba(100, 116, 139, 0.86) !important; }
-    body.light-theme .text-lv-600 { color: #475569 !important; }
-    body.light-theme .text-lv-700 { color: #334155 !important; }
+    body.light-theme .text-lv-200 { color: #172033 !important; }
+    body.light-theme .text-lv-300 { color: #24324a !important; }
+    body.light-theme .text-lv-300\/60 { color: rgba(36, 50, 74, 0.86) !important; }
+    body.light-theme .text-lv-300\/70 { color: rgba(36, 50, 74, 0.9) !important; }
+    body.light-theme .text-lv-400 { color: #334155 !important; }
+    body.light-theme .text-lv-400\/60 { color: rgba(51, 65, 85, 0.86) !important; }
+    body.light-theme .text-lv-400\/70 { color: rgba(51, 65, 85, 0.9) !important; }
+    body.light-theme .text-lv-500 { color: #475569 !important; }
+    body.light-theme .text-lv-500\/80 { color: rgba(71, 85, 105, 0.9) !important; }
+    body.light-theme .text-lv-600 { color: #334155 !important; }
+    body.light-theme .text-lv-700 { color: #1f2937 !important; }
     body.light-theme .hover\:text-lv-200:hover { color: #0f172a !important; }
     body.light-theme .hover\:bg-lv-500\/10:hover { background: rgba(99,102,241,.12) !important; }
-    body.light-theme .bg-lv-950\/20 { background: rgba(248, 250, 252, 0.84) !important; }
-    body.light-theme .bg-lv-950\/35 { background: rgba(248, 250, 252, 0.92) !important; }
-    body.light-theme .bg-lv-950\/40 { background: rgba(241, 245, 249, 0.96) !important; }
-    body.light-theme .bg-lv-950\/50 { background: rgba(226, 232, 240, 0.9) !important; }
-    body.light-theme .bg-lv-900\/25 { background: rgba(241, 245, 249, 0.95) !important; }
-    body.light-theme .bg-lv-900\/40 { background: rgba(226, 232, 240, 0.96) !important; }
-    body.light-theme .bg-lv-900\/50 { background: rgba(226, 232, 240, 0.98) !important; }
-    body.light-theme .bg-lv-500\/10 { background: rgba(99,102,241,.12) !important; }
-    body.light-theme .bg-lv-500\/20 { background: rgba(99,102,241,.16) !important; }
-    body.light-theme .border-lv-500\/10 { border-color: rgba(99,102,241,.18) !important; }
-    body.light-theme .border-lv-500\/20 { border-color: rgba(99,102,241,.24) !important; }
-    body.light-theme .border-lv-500\/30 { border-color: rgba(99,102,241,.28) !important; }
+    body.light-theme .bg-lv-950\/20 { background: #f8fafc !important; }
+    body.light-theme .bg-lv-950\/35 { background: #f1f5f9 !important; }
+    body.light-theme .bg-lv-950\/40 { background: #eef2f7 !important; }
+    body.light-theme .bg-lv-950\/50 { background: #e2e8f0 !important; }
+    body.light-theme .bg-lv-900\/25 { background: #f8fafc !important; }
+    body.light-theme .bg-lv-900\/40 { background: #eef2f7 !important; }
+    body.light-theme .bg-lv-900\/50 { background: #e2e8f0 !important; }
+    body.light-theme .bg-lv-500\/10 { background: rgba(79,70,229,.10) !important; }
+    body.light-theme .bg-lv-500\/20 { background: rgba(79,70,229,.16) !important; }
+    body.light-theme .border-lv-500\/10 { border-color: rgba(148,163,184,.34) !important; }
+    body.light-theme .border-lv-500\/20 { border-color: rgba(100,116,139,.36) !important; }
+    body.light-theme .border-lv-500\/30 { border-color: rgba(100,116,139,.42) !important; }
     body.light-theme .border-lv-900\/50 { border-color: rgba(148, 163, 184, 0.34) !important; }
+    body.light-theme .divide-lv-500\/5 > :not([hidden]) ~ :not([hidden]) {
+      border-color: rgba(203,213,225,.9) !important;
+    }
+
+    body.light-theme .text-green-200,
+    body.light-theme .text-green-300,
+    body.light-theme .text-green-400 { color: #047857 !important; }
+    body.light-theme .text-amber-200,
+    body.light-theme .text-amber-300,
+    body.light-theme .text-amber-400,
+    body.light-theme .text-yellow-400 { color: #a16207 !important; }
+    body.light-theme .text-sky-200,
+    body.light-theme .text-sky-300,
+    body.light-theme .text-sky-400 { color: #0369a1 !important; }
+    body.light-theme .text-red-300,
+    body.light-theme .text-red-400 { color: #b91c1c !important; }
+    body.light-theme .bg-green-500\/5,
+    body.light-theme .bg-green-500\/10 { background: rgba(16,185,129,.12) !important; }
+    body.light-theme .bg-amber-500\/5,
+    body.light-theme .bg-amber-500\/10 { background: rgba(245,158,11,.14) !important; }
+    body.light-theme .bg-sky-500\/5,
+    body.light-theme .bg-sky-500\/10 { background: rgba(14,165,233,.14) !important; }
+    body.light-theme .bg-red-500\/5,
+    body.light-theme .bg-red-500\/10 { background: rgba(239,68,68,.12) !important; }
+
+    body.light-theme button.bg-lv-600,
+    body.light-theme a.bg-lv-600,
+    body.light-theme .btn-run {
+      color: #ffffff !important;
+    }
+
+    body.light-theme .bg-gradient-to-br .text-white {
+      color: #ffffff !important;
+    }
   </style>
 </head>
 <body>
@@ -493,7 +591,7 @@
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Person / Role</th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Contact / Quality</th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Location</th>
-                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Value Prop</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Lead Summary</th>
                 <th class="px-5 py-4 text-[10px] uppercase tracking-wider text-lv-400 font-bold whitespace-nowrap">Source URLs</th>
               </tr>
             </thead>
@@ -994,6 +1092,61 @@
         || ['domain.com', 'example.com', 'example.net', 'example.org'].includes(domain);
     }
 
+    function buildLeadSummary(lead) {
+      const clean = (value) => {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        return (!text || text === '—' || /^n\/?a$/i.test(text)) ? '' : text;
+      };
+      const existing = clean(lead.lead_summary || lead.business_summary || lead.plain_summary || lead.what_they_do);
+      if (existing) return existing;
+      const company = clean(lead.company_name) || 'This company';
+      const specialty = clean(lead.specialty || lead.industry) || 'B2B services';
+      const location = clean(lead.location || [lead.city, lead.state].filter(Boolean).join(', '));
+      const valueProp = clean(lead.value_proposition || lead.notes);
+      const signals = [];
+      if (clean(lead.contact_email) && !isPlaceholderEmail(lead.contact_email)) signals.push('email');
+      if (clean(lead.contact_phone)) signals.push('phone');
+      if (clean(lead.linkedin_url || lead.company_linkedin_url)) signals.push('LinkedIn');
+      if (clean(lead.company_website)) signals.push('website');
+      const locationText = location ? ` in/around ${location}` : '';
+      const signalText = signals.length ? ` Contact path found via ${[...new Set(signals)].join(', ')}.` : '';
+      const detail = valueProp && !/^verified/i.test(valueProp) ? ` ${valueProp}` : ' Useful for outreach because it matches the selected lead category.';
+      return `${company} appears to provide ${specialty}${locationText}.${detail}${signalText}`.slice(0, 280);
+    }
+
+    function isGenericCompanyName(value) {
+      const clean = String(value || '').replace(/[^a-z0-9]+/gi, ' ').trim().toLowerCase();
+      const generic = ['home', 'homepage', 'home page', 'website', 'official website', 'contact', 'contact us', 'about', 'about us', 'services', 'gallery', 'locations'];
+      const firstPart = String(value || '').split(/\s+(?:\||-|\u2013|\u2014)\s+|\s*:\s*/)[0].replace(/[^a-z0-9]+/gi, ' ').trim().toLowerCase();
+      if (!clean || generic.includes(clean) || (firstPart !== clean && generic.includes(firstPart))) return true;
+      if (/^(?:(?:a|an|the|your)\s+)?(?:leading|premier|trusted|professional|expert|best|top|local|full service|one stop)\b/i.test(clean)) return true;
+      return /\b(?:offers?|provides?|speciali[sz]es?|serving|learn more|near me|solutions for|services in)\b/i.test(clean);
+    }
+
+    function companyNameFromUrl(url) {
+      try {
+        const host = new URL(String(url || '')).hostname.replace(/^www\./i, '');
+        let label = host.split('.')[0].replace(/[-_]+/g, ' ').trim();
+        if (!label) return '';
+        if (!label.includes(' ')) {
+          const words = ['upfitters', 'upfitter', 'outfitters', 'interiors', 'conversion', 'conversions', 'trailers', 'trailer', 'trucks', 'truck', 'campervans', 'campers', 'camper', 'vans', 'van', 'motors', 'auto', 'autos', 'coach', 'coaches', 'designs', 'design', 'custom', 'adventure', 'offroad', 'solutions', 'systems', 'homes', 'rv'];
+          let remaining = label;
+          const suffixes = [];
+          while (remaining) {
+            const suffix = words.sort((a, b) => b.length - a.length).find(word => remaining.length > word.length && remaining.endsWith(word));
+            if (!suffix) break;
+            suffixes.unshift(suffix);
+            remaining = remaining.slice(0, -suffix.length);
+          }
+          label = [remaining, ...suffixes].filter(Boolean).join(' ');
+        }
+        const acronyms = new Set(['abc', 'rv', 'usa', 'us', '4x4']);
+        return label.split(/\s+/).filter(Boolean).map(token => acronyms.has(token.toLowerCase()) ? token.toUpperCase() : token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()).join(' ');
+      } catch (_) {
+        return '';
+      }
+    }
+
     function hasEmailVerification(lead) {
       const verification = lead?.email_verification;
       if (!verification || typeof verification !== 'object') return false;
@@ -1219,8 +1372,8 @@
           </td>
           <td class="px-5 py-4 max-w-[220px]">
             <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-3"
-               title="${(lead.value_proposition || '').replace(/"/g,'&quot;')}">
-               ${lead.value_proposition || '—'}
+               title="${(lead.lead_summary || lead.value_proposition || '').replace(/"/g,'&quot;')}">
+               ${lead.lead_summary || lead.value_proposition || '—'}
             </p>
           </td>
         `;
@@ -1625,14 +1778,26 @@
 
       lead.company_name      = find(['company name', 'company', 'name', 'business']) || '—';
       lead.company_website   = find(['website', 'url', 'domain', 'link']);
+      if (isGenericCompanyName(lead.company_name)) {
+        lead.company_name = companyNameFromUrl(lead.company_website) || lead.company_name;
+      }
       lead.company_size      = find(['size', 'employees', 'headcount']);
       lead.founder_name      = find(['founder', 'ceo', 'contact name', 'owner']) || '—';
       lead.linkedin_url      = find(['linkedin', 'profile']);
       lead.contact_email     = find(['email', 'mail']) || '—';
       lead.contact_phone     = find(['phone', 'mobile', 'tel']) || '—';
+      const alternatePhonesValue = find(['alternate phones', 'alternate_phones', 'other phones']);
+      lead.alternate_phones = Array.isArray(alternatePhonesValue)
+        ? alternatePhonesValue
+        : String(alternatePhonesValue || '').split(/[|,]/).map(item => item.trim()).filter(Boolean);
+      lead.phone_confidence = find(['phone confidence', 'phone_confidence']) || '';
+      lead.phone_source = find(['phone source', 'phone_source']) || '';
+      lead.phone_validation_status = find(['phone status', 'phone validation status', 'phone_validation_status']) || '';
+      lead.phone_type = find(['phone type', 'phone_type']) || '';
       lead.industry          = find(['industry', 'type', 'specialty', 'sector']) || (state.mode === 'velit' ? 'Upfitter' : (industryInput.value.trim() || 'General'));
       lead.specialty         = lead.industry; // mirrors industry for sheet column
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
+      lead.lead_summary      = find(['lead summary', 'business summary', 'plain summary', 'what they do', 'summary']) || buildLeadSummary(lead);
 
       // Location — try dedicated fields first, fall back to compound string
       const rawCity  = find(['city'])  || '';
@@ -1656,7 +1821,7 @@
       lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
 
       lead.status = find(['status']) || 'New';
-      lead.notes  = find(['notes', 'comments', 'remarks']) || lead.value_proposition || '';
+      lead.notes  = find(['notes', 'comments', 'remarks']) || lead.lead_summary || lead.value_proposition || '';
 
       return lead;
     }
@@ -1766,6 +1931,7 @@
           lead.rejected = data.lead_quality.rejected ?? lead.rejected;
           lead.quality_notes = data.lead_quality.quality_notes || lead.quality_notes;
           lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
+          lead.acceptance_reason = data.lead_quality.acceptance_reason || data.lead_quality.confidence_explanation || lead.acceptance_reason;
           lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
         }
         addLog(`Email verification complete for <strong>${escapeHtml(lead.company_name)}</strong>: <strong>${escapeHtml(lead.verification_status)}</strong>.`, /valid/i.test(lead.verification_status) ? 'success' : 'info');
@@ -2016,6 +2182,15 @@
         const email = lead.contact_email || '—';
         const displayEmail = isPlaceholderEmail(email) ? '—' : email;
         const phone = lead.contact_phone || '—';
+        const alternatePhones = Array.isArray(lead.alternate_phones)
+          ? lead.alternate_phones.filter(Boolean)
+          : String(lead.alternate_phones || '').split(/[|,]/).map(item => item.trim()).filter(Boolean);
+        const phoneMeta = [
+          lead.phone_validation_status ? String(lead.phone_validation_status) : '',
+          lead.phone_confidence ? `confidence ${lead.phone_confidence}` : '',
+          lead.phone_source ? String(lead.phone_source).replace(/_/g, ' ') : '',
+        ].filter(Boolean).join(' | ');
+        const hasPhone = /\d/.test(String(phone || ''));
         const linkedin = lead.linkedin_url || '';
         const contactPage = lead.contact_page || '';
         const source = lead.source || 'web';
@@ -2024,6 +2199,7 @@
         const qualityStatus = lead.quality_status || 'unreviewed';
         const verificationStatus = getEmailVerificationStatus(lead);
         const qualityNotes = Array.isArray(lead.quality_notes) ? lead.quality_notes.join(' | ') : (lead.quality_notes || '');
+        const acceptanceReason = lead.acceptance_reason || lead.confidence_explanation || '';
         const verificationDetailsMarkup = buildVerificationDetailsMarkup(lead);
 
         const confidenceTone = confidence === 'high'
@@ -2063,6 +2239,8 @@
           <td class="px-5 py-4 align-top">
             <div class="text-[11px] text-lv-200">${escapeHtml(displayEmail)}</div>
             <div class="text-[11px] text-lv-400 mt-1">${escapeHtml(phone)}</div>
+            ${hasPhone && phoneMeta ? `<div class="text-[9px] text-lv-500 mt-1 max-w-[220px]">${escapeHtml(phoneMeta)}</div>` : ''}
+            ${alternatePhones.length ? `<div class="text-[9px] text-lv-600 mt-1 max-w-[220px]" title="${escapeHtml(alternatePhones.join(' | '))}">Alt: ${escapeHtml(alternatePhones.slice(0, 2).join(' | '))}</div>` : ''}
             <div class="flex flex-wrap gap-2 mt-2">
               <span class="px-2 py-1 rounded-md border text-[9px] uppercase font-bold tracking-wider ${confidenceTone}">${escapeHtml(confidence)}</span>
               <span class="text-[10px] font-bold uppercase tracking-wider ${verificationTone}">${escapeHtml(verificationStatus)}</span>
@@ -2070,6 +2248,7 @@
             <div class="text-[10px] text-lv-500 mt-2">Score ${qualityScore || 0} • ${escapeHtml(qualityStatus)}</div>
             <div class="text-[10px] text-lv-600 mt-1">${escapeHtml(source)}</div>
             ${qualityNotes ? `<div class="text-[9px] text-lv-600 mt-1 max-w-[220px]">${escapeHtml(qualityNotes)}</div>` : ''}
+            ${acceptanceReason ? `<div class="text-[9px] text-lv-500 mt-1 max-w-[260px]" title="${escapeHtml(acceptanceReason)}">Why: ${escapeHtml(acceptanceReason)}</div>` : ''}
             ${lead.verifying ? `<div class="text-[10px] text-lv-500 mt-2">Checking email...</div>` : ''}
             ${(!hasEmailVerification(lead) && !lead.verifying && displayEmail !== '—')
               ? `<button onclick="window.verifyLeadByIndex(${index})" class="mt-2 px-2 py-1 rounded-md bg-lv-500/10 border border-lv-500/30 text-[9px] font-bold text-lv-300 hover:bg-lv-500/20 transition-all uppercase">Verify</button>`
@@ -2083,7 +2262,7 @@
             <div class="text-[9px] text-lv-500 uppercase font-bold mt-1">${escapeHtml(lead.city || '')} ${escapeHtml(lead.state || '')}</div>
           </td>
           <td class="px-5 py-4 align-top max-w-[260px]">
-            <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-4" title="${escapeHtml(lead.value_proposition || '')}">${escapeHtml(lead.value_proposition || '—')}</p>
+            <p class="text-[11px] text-lv-400 leading-relaxed line-clamp-4" title="${escapeHtml(lead.lead_summary || lead.value_proposition || '')}">${escapeHtml(lead.lead_summary || lead.value_proposition || '—')}</p>
           </td>
         `;
         const sourceCell = document.createElement('td');
@@ -2158,6 +2337,7 @@
           lead.rejected = data.lead_quality.rejected ?? lead.rejected;
           lead.quality_notes = data.lead_quality.quality_notes || lead.quality_notes;
           lead.quality_warnings = data.lead_quality.quality_warnings || lead.quality_warnings;
+          lead.acceptance_reason = data.lead_quality.acceptance_reason || data.lead_quality.confidence_explanation || lead.acceptance_reason;
           lead.field_sources = data.lead_quality.field_sources || lead.field_sources;
         }
         addLog(`Email verification complete for <strong>${escapeHtml(lead.company_name)}</strong>: <strong>${escapeHtml(lead.verification_status)}</strong>.`, /valid/i.test(lead.verification_status) ? 'success' : 'info');
@@ -2435,6 +2615,9 @@
 
       lead.company_name = find(['company name', 'company', 'name', 'business']) || '—';
       lead.company_website = find(['website', 'url', 'domain', 'link']);
+      if (isGenericCompanyName(lead.company_name)) {
+        lead.company_name = companyNameFromUrl(lead.company_website) || lead.company_name;
+      }
       lead.company_size = find(['size', 'employees', 'headcount']);
       lead.contact_person_name = find(['contact person', 'contact name', 'person name', 'lead name', 'founder', 'ceo', 'owner']) || '';
       lead.contact_person_title = find(['person title', 'contact title', 'job title', 'role', 'designation']) || '';
@@ -2450,6 +2633,14 @@
       lead.contact_email = find(['email', 'mail']) || '—';
       if (isPlaceholderEmail(lead.contact_email)) lead.contact_email = '—';
       lead.contact_phone = find(['phone', 'mobile', 'tel']) || '—';
+      const alternatePhonesValue = find(['alternate phones', 'alternate_phones', 'other phones']);
+      lead.alternate_phones = Array.isArray(alternatePhonesValue)
+        ? alternatePhonesValue
+        : String(alternatePhonesValue || '').split(/[|,]/).map(item => item.trim()).filter(Boolean);
+      lead.phone_confidence = find(['phone confidence', 'phone_confidence']) || '';
+      lead.phone_source = find(['phone source', 'phone_source']) || '';
+      lead.phone_validation_status = find(['phone status', 'phone validation status', 'phone_validation_status']) || '';
+      lead.phone_type = find(['phone type', 'phone_type']) || '';
       lead.contact_page = find(['contact page', 'contact url', 'contact form']);
       lead.source = find(['source', 'origin']) || 'web';
       lead.source_details = raw.source_details || raw.sourceDetails || (raw.metadata && raw.metadata.source_details) || [];
@@ -2460,6 +2651,7 @@
       lead.rejected = find(['rejected']);
       lead.quality_notes = find(['quality notes', 'notes']) || [];
       lead.quality_warnings = find(['quality warnings', 'warnings']) || [];
+      lead.acceptance_reason = find(['acceptance reason', 'confidence explanation', 'why accepted']) || '';
       lead.field_sources = find(['field sources', 'sources']) || {};
       lead.email_status = find(['email status']);
       lead.verification_status = find(['verification status']);
@@ -2479,6 +2671,7 @@
       lead.industry = find(['industry', 'type', 'specialty', 'sector']) || (state.mode === 'velit' ? 'Upfitter' : (industryInput.value.trim() || 'General'));
       lead.specialty = lead.industry;
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
+      lead.lead_summary = find(['lead summary', 'business summary', 'plain summary', 'what they do', 'summary']) || buildLeadSummary(lead);
 
       const rawCity = find(['city']) || '';
       const rawState = find(['state']) || '';
@@ -2502,7 +2695,7 @@
 
       lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
       lead.status = find(['status']) || 'New';
-      lead.notes = find(['notes', 'comments', 'remarks']) || lead.value_proposition || '';
+      lead.notes = find(['notes', 'comments', 'remarks']) || lead.lead_summary || lead.value_proposition || '';
       return lead;
     }
 
@@ -2521,6 +2714,8 @@
       const cols = [
         { header: 'Company Name', key: l => l.company_name },
         { header: 'Specialty',    key: l => l.specialty || l.industry },
+        { header: 'Lead Summary', key: l => l.lead_summary || buildLeadSummary(l) },
+        { header: 'Why Accepted', key: l => l.acceptance_reason || l.confidence_explanation || '' },
         { header: 'Contact Name', key: l => l.contact_person_name || l.founder_name },
         { header: 'Person LinkedIn', key: l => l.linkedin_url },
         { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
@@ -2532,12 +2727,16 @@
         { header: 'Email Catch All', key: l => l.email_catch_all === true ? 'yes' : (l.email_catch_all === false ? 'no' : '') },
         { header: 'Role Email', key: l => l.email_is_role === true ? 'yes' : (l.email_is_role === false ? 'no' : '') },
         { header: 'Phone',        key: l => l.contact_phone },
+        { header: 'Alternate Phones', key: l => Array.isArray(l.alternate_phones) ? l.alternate_phones.join(' | ') : (l.alternate_phones || '') },
+        { header: 'Phone Confidence', key: l => l.phone_confidence || '' },
+        { header: 'Phone Source', key: l => l.phone_source || '' },
+        { header: 'Phone Status', key: l => l.phone_validation_status || '' },
         { header: 'Website',      key: l => l.company_website },
         { header: 'City',         key: l => l.city },
         { header: 'State',        key: l => l.state },
         { header: 'Zip Code',     key: l => l.zip_code },
         { header: 'Status',       key: l => l.status || 'New' },
-        { header: 'Notes',        key: l => l.notes || l.value_proposition },
+        { header: 'Notes',        key: l => l.notes || l.lead_summary || l.value_proposition },
       ];
       const esc  = v => `"${(v||'').toString().replace(/"/g,'""')}"`;
       const header = cols.map(c => c.header).join(',');

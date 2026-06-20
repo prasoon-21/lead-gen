@@ -24,6 +24,12 @@ from core.services.lead_quality_service import score_lead
 from core.tools.base import ToolContext
 from core.tools.external.linkedin_research import LinkedInResearchTool
 from core.tools.external.tavily_client import TavilyClient
+from core.utils.lead_summary import build_plain_lead_summary
+from core.utils.phone_quality import (
+    build_phone_summary,
+    phone_candidates_from_values,
+    phone_summary_from_text,
+)
 
 
 GEMINI_LEAD_ANALYST_PROMPT = (
@@ -666,7 +672,11 @@ class ProductionLeadPipeline:
 
         score_10 = self._coerce_score_10(ai_score.get("qualification_score", 0))
         summary = str(ai_score.get("value_proposition") or ai_score.get("summary") or "").strip()
-        company_name = str(item.get("company_name") or "").strip() or self._company_name_from_title_or_url(title, url)
+        company_name = self._resolve_company_name(
+            str(item.get("company_name") or "").strip(),
+            title=title,
+            url=url,
+        )
         directory_url = str(item.get("directory_url") or "").strip()
         if not self._looks_like_valid_company_name(company_name):
             return None
@@ -685,18 +695,26 @@ class ProductionLeadPipeline:
             industry=industry,
             location=location,
         )
+        phone_summary = phone_summary_from_text(text, source_type="tavily_extract", source_url=url)
         lead = {
             "company_name": company_name,
             "company_website": url,
             "industry": industry or "General",
             "location": location or "",
             "value_proposition": summary,
+            "lead_summary": "",
             "company_size": "",
             "contact_person_name": "",
             "founder_name": "",
             "contact_person_title": "",
-            "contact_email": self._first_match(self._email_pattern(), text), # Keep first email for now
-            "contact_phone": self._extract_all_phones(text)[0] if self._extract_all_phones(text) else "",
+            "contact_email": self._first_valid_email(text),
+            "contact_phone": phone_summary.get("contact_phone", ""),
+            "alternate_phones": phone_summary.get("alternate_phones", []),
+            "phone_confidence": phone_summary.get("phone_confidence", 0),
+            "phone_source": phone_summary.get("phone_source", ""),
+            "phone_validation_status": phone_summary.get("phone_validation_status", ""),
+            "phone_type": phone_summary.get("phone_type", ""),
+            "phone_candidates": phone_summary.get("phone_candidates", []),
             "linkedin_url": self._first_linkedin_url(text),
             "contact_page": url,
             "source": "trusted_directory",
@@ -729,6 +747,7 @@ class ProductionLeadPipeline:
             "verification_message": "Verified with browser-like headers before extraction.",
             "notes": summary,
         }
+        lead["lead_summary"] = build_plain_lead_summary(lead)
         quality = score_lead(lead)
         lead.update({k: v for k, v in quality.items() if k != "quality_score"})
         lead["quality_score"] = max(int(lead["quality_score"]), int(quality.get("quality_score") or 0))
@@ -818,9 +837,12 @@ class ProductionLeadPipeline:
     @classmethod
     def _merge_linkedin_data(cls, lead: Dict[str, Any], linkedin_data: Dict[str, Any]) -> Dict[str, Any]:
         merged = dict(lead)
+        linkedin_company_name = cls._clean_company_candidate(str(linkedin_data.get("company_name") or ""))
+        if not cls._looks_like_valid_company_name(linkedin_company_name):
+            linkedin_company_name = ""
         merged.update(
             {
-                "company_name": cls._first_non_empty(linkedin_data.get("company_name"), merged.get("company_name")),
+                "company_name": cls._first_non_empty(linkedin_company_name, merged.get("company_name")),
                 "company_website": cls._first_non_empty(linkedin_data.get("company_website"), merged.get("company_website")),
                 "contact_person_name": cls._first_non_empty(
                     linkedin_data.get("contact_person_name"),
@@ -852,6 +874,14 @@ class ProductionLeadPipeline:
                 "confidence": cls._first_non_empty(linkedin_data.get("confidence"), merged.get("confidence")),
             }
         )
+        linkedin_phone_summary = build_phone_summary(
+            phone_candidates_from_values(
+                [linkedin_data.get("contact_phone")],
+                source_type="linkedin_research",
+                source_url=merged.get("linkedin_url") or merged.get("company_website") or "",
+            )
+        )
+        cls._apply_phone_summary(merged, linkedin_phone_summary)
         merged.setdefault("source_details", []).append(
             {
                 "stage": "linkedin_enrichment",
@@ -865,6 +895,7 @@ class ProductionLeadPipeline:
         merged.update({k: v for k, v in quality.items() if k != "quality_score"})
         merged["quality_score"] = max(int(merged.get("quality_score") or 0), int(quality.get("quality_score") or 0))
         merged["quality_score"] = max(0, min(int(merged["quality_score"]), 100))
+        merged["lead_summary"] = build_plain_lead_summary(merged)
         return merged
 
     @classmethod
@@ -892,6 +923,7 @@ class ProductionLeadPipeline:
         merged.update({k: v for k, v in quality.items() if k != "quality_score"})
         merged["quality_score"] = max(int(merged.get("quality_score") or 0), int(quality.get("quality_score") or 0))
         merged["quality_score"] = max(0, min(int(merged["quality_score"]), 100))
+        merged["lead_summary"] = build_plain_lead_summary(merged)
         return merged
 
     async def _gemini_score(self, *, title: str, url: str, text: str, industry: str, location: str) -> Dict[str, Any]:
@@ -994,22 +1026,148 @@ class ProductionLeadPipeline:
             score += 1
         return max(0, min(score, 10))
 
+    @classmethod
+    def _company_name_from_title_or_url(cls, title: str, url: str) -> str:
+        domain_name = cls._company_name_from_url(url)
+        domain_tokens = set(cls._company_name_tokens(domain_name))
+        segments = re.split(r"\s+(?:\||-|\u2013|\u2014)\s+|\s*:\s*", title or "")
+        scored: List[Tuple[int, str]] = []
+        for index, segment in enumerate(segments):
+            candidate = re.sub(r"\s+", " ", segment).strip(" -.,")
+            if not candidate or cls._is_generic_company_title(candidate):
+                continue
+            tokens = cls._company_name_tokens(candidate)
+            if not tokens or len(tokens) > 8:
+                continue
+            overlap = len(set(tokens) & domain_tokens)
+            score = overlap * 5
+            score += 3 if 1 <= len(tokens) <= 5 else 1
+            score += 1 if index == 0 else 0
+            if domain_tokens and set(tokens) == domain_tokens:
+                score += 4
+            scored.append((score, candidate[:120]))
+        if scored:
+            return max(scored, key=lambda item: (item[0], len(item[1])))[1]
+        return domain_name
+
+    @classmethod
+    def _resolve_company_name(cls, value: str, *, title: str, url: str) -> str:
+        current = cls._clean_company_candidate(value)
+        resolved = cls._clean_company_candidate(cls._company_name_from_title_or_url(title, url))
+        if not cls._looks_like_valid_company_name(current):
+            return resolved or cls._company_name_from_url(url)
+        if not cls._looks_like_valid_company_name(resolved):
+            return current
+
+        current_tokens = set(cls._company_name_tokens(current))
+        resolved_tokens = set(cls._company_name_tokens(resolved))
+        if current_tokens and current_tokens < resolved_tokens:
+            return resolved
+        return current
+
     @staticmethod
-    def _company_name_from_title_or_url(title: str, url: str) -> str:
-        cleaned = re.split(r"\s+[|-]\s+|:", title or "", maxsplit=1)[0].strip()
-        cleaned = re.sub(
-            r"^(?:top|best|web development|website development company|custom software development company|is a)\s+",
-            "",
+    def _company_name_tokens(value: str) -> List[str]:
+        return re.findall(r"[a-z0-9]+", value.lower())
+
+    @staticmethod
+    def _is_generic_company_title(value: str) -> bool:
+        cleaned = re.sub(r"[^a-z0-9]+", " ", value or "", flags=re.IGNORECASE).strip().lower()
+        generic_titles = {
+            "home",
+            "homepage",
+            "home page",
+            "official site",
+            "official website",
+            "website",
+            "contact",
+            "contact us",
+            "about",
+            "about us",
+            "services",
+            "service",
+            "products",
+            "locations",
+            "gallery",
+            "blog",
+            "index",
+            "welcome",
+        }
+        title_parts = re.split(r"\s+(?:\||-|\u2013|\u2014)\s+|\s*:\s*", value or "")
+        first_part = re.sub(r"[^a-z0-9]+", " ", title_parts[0], flags=re.IGNORECASE).strip().lower()
+        if cleaned in generic_titles or (len(title_parts) > 1 and first_part in generic_titles):
+            return True
+        if re.match(
+            r"^(?:(?:a|an|the|your)\s+)?(?:leading|premier|trusted|professional|expert|best|top|local|full service|one stop)\b",
             cleaned,
-            flags=re.IGNORECASE,
-        ).strip(" -.,")
-        if cleaned and len(cleaned) > 2:
-            return cleaned[:120]
+        ):
+            return True
+        return bool(
+            re.search(
+                r"\b(?:offers?|provides?|speciali[sz]es?|serving|learn more|near me|solutions for|services in)\b",
+                cleaned,
+            )
+        )
+
+    @staticmethod
+    def _company_name_from_url(url: str) -> str:
         host = (urlparse(url or "").hostname or "").lower()
         if host.startswith("www."):
             host = host[4:]
         label = host.split(".")[0].replace("-", " ").replace("_", " ").strip()
-        return label.title() if label else "Unknown Company"
+        if not label:
+            return "Unknown Company"
+        if " " not in label:
+            words = (
+                "upfitters",
+                "upfitter",
+                "outfitters",
+                "interiors",
+                "conversion",
+                "conversions",
+                "trailers",
+                "trailer",
+                "trucks",
+                "truck",
+                "campervans",
+                "campers",
+                "camper",
+                "vans",
+                "van",
+                "motors",
+                "auto",
+                "autos",
+                "coach",
+                "coaches",
+                "designs",
+                "design",
+                "custom",
+                "adventure",
+                "offroad",
+                "solutions",
+                "systems",
+                "homes",
+                "rv",
+            )
+            remaining = label
+            suffixes: List[str] = []
+            while remaining:
+                suffix = next(
+                    (
+                        word
+                        for word in sorted(words, key=len, reverse=True)
+                        if len(remaining) > len(word) and remaining.endswith(word)
+                    ),
+                    "",
+                )
+                if not suffix:
+                    break
+                suffixes.insert(0, suffix)
+                remaining = remaining[: -len(suffix)]
+            label = " ".join(([remaining] if remaining else []) + suffixes)
+        tokens = [token for token in re.split(r"\s+", label) if token]
+        acronym_tokens = {"abc", "rv", "usa", "us", "4x4"}
+        pretty_tokens = [token.upper() if token.lower() in acronym_tokens else token.capitalize() for token in tokens]
+        return " ".join(pretty_tokens) if pretty_tokens else "Unknown Company"
 
     @classmethod
     def _company_name_from_directory_item(cls, item: Dict[str, Any]) -> str:
@@ -1058,6 +1216,8 @@ class ProductionLeadPipeline:
             if candidate.startswith(prefix):
                 return ""
         lowered = candidate.lower()
+        if ProductionLeadPipeline._is_generic_company_title(candidate):
+            return ""
         if any(marker in lowered for marker in (" companies", " rankings", " services provided", " read more", "official website", "community events")):
             return ""
         return candidate[:120] if len(candidate) >= 3 else ""
@@ -1211,6 +1371,29 @@ class ProductionLeadPipeline:
     def _email_pattern() -> re.Pattern[str]:
         return re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.IGNORECASE)
 
+    @classmethod
+    def _valid_email_matches(cls, text: str) -> List[str]:
+        asset_extensions = {"avif", "bmp", "css", "gif", "ico", "jpeg", "jpg", "js", "png", "svg", "webp"}
+        values: List[str] = []
+        seen = set()
+        for raw in cls._email_pattern().findall(text or ""):
+            email = raw.strip(" .,:;()[]{}<>\"'").lower()
+            local, _, domain = email.partition("@")
+            extension = domain.rsplit(".", 1)[-1] if "." in domain else ""
+            if not local or not domain or extension in asset_extensions:
+                continue
+            if re.search(r"(?:^|[-_.])(?:logo|icon|sprite|image)(?:[-_.]|$)", local, re.IGNORECASE):
+                continue
+            if email not in seen:
+                seen.add(email)
+                values.append(email)
+        return values
+
+    @classmethod
+    def _first_valid_email(cls, text: str) -> str:
+        values = cls._valid_email_matches(text)
+        return values[0] if values else ""
+
     @staticmethod
     def _phone_pattern() -> re.Pattern[str]:
         return re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
@@ -1230,25 +1413,34 @@ class ProductionLeadPipeline:
 
     @classmethod
     def _extract_all_phones(cls, text: str) -> List[str]:
-        found_phones: List[str] = []
-        for match in cls._phone_pattern().finditer(text or ""):
-            candidate = match.group(0).strip()
-            digits = re.sub(r"\D", "", candidate)
-            if len(digits) < 10:
-                continue
-            if len(digits) > 12:
-                continue
-            # This pattern tries to avoid dates like 12-01-2023
-            if re.fullmatch(r"\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}", candidate):
-                continue
-            if re.fullmatch(r"\d{2}[-/.]\d{2}[-/.]\d{2,4}[-/.]\d{3,4}", candidate):
-                continue
-            if "." in candidate and len(digits) > 12:
-                continue
-            if candidate.isdigit() and len(digits) == 10 and digits.startswith(("16", "17")):
-                continue
-            found_phones.append(candidate)
-        return found_phones
+        summary = phone_summary_from_text(text or "", source_type="text")
+        phones = [summary.get("contact_phone", "")]
+        phones.extend(summary.get("alternate_phones") or [])
+        return [phone for phone in phones if phone]
+
+    @classmethod
+    def _apply_phone_summary(cls, lead: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
+        primary = cls._first_non_empty(summary.get("contact_phone"))
+        if not primary:
+            return lead
+        existing = cls._first_non_empty(lead.get("contact_phone"))
+        current_confidence = int(lead.get("phone_confidence") or 0)
+        new_confidence = int(summary.get("phone_confidence") or 0)
+        alternates = list(lead.get("alternate_phones") or [])
+        if existing and existing != primary and existing not in alternates:
+            alternates.insert(0, existing)
+        for phone in summary.get("alternate_phones") or []:
+            if phone and phone != primary and phone not in alternates:
+                alternates.append(phone)
+        if not existing or new_confidence >= current_confidence:
+            lead["contact_phone"] = primary
+            lead["phone_confidence"] = new_confidence
+            lead["phone_source"] = summary.get("phone_source", "")
+            lead["phone_validation_status"] = summary.get("phone_validation_status", "")
+            lead["phone_type"] = summary.get("phone_type", "")
+            lead["phone_candidates"] = summary.get("phone_candidates", [])
+        lead["alternate_phones"] = alternates[:4]
+        return lead
 
     @staticmethod
     def _first_linkedin_url(text: str) -> str:

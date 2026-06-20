@@ -44,6 +44,7 @@ lead_run_*.json
 # OS
 .DS_Store
 Thumbs.db
+battery-report.html
 
 # Node modules (if any)
 node_modules/

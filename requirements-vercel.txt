@@ -18,6 +18,7 @@ pydantic>=2.5.0
 # Email verification utilities
 dnspython>=2.6.0
 email-validator>=2.1.0
+phonenumbers>=8.13.0
 
 # Google Sheets (leads storage)
 gspread>=5.12.0

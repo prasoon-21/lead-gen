@@ -21,6 +21,10 @@ pydantic>=2.5.0
 # Email verification utilities
 dnspython>=2.6.0
 email-validator>=2.1.0
+phonenumbers>=8.13.0
+
+# Optional JS-rendered site scraping fallback for contact/footer data
+playwright>=1.48.0
 
 # Google Sheets (optional)
 gspread>=5.12.0

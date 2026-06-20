@@ -55,6 +55,57 @@ def _is_generic_email(email: str) -> bool:
     return local in GENERIC_EMAIL_PREFIXES
 
 
+def _acceptance_explanation(
+    *,
+    lead: Dict[str, Any],
+    score: int,
+    quality_status: str,
+    rejected: bool,
+    notes: List[str],
+    warnings: List[str],
+) -> str:
+    company = _clean(lead.get("company_name")) or "This lead"
+    website = _clean(lead.get("company_website"))
+    email = _clean(lead.get("contact_email"))
+    phone = _clean(lead.get("contact_phone"))
+    linkedin_url = _clean(lead.get("linkedin_url"))
+    contact_page = _clean(lead.get("contact_page"))
+    value_prop = _clean(lead.get("value_proposition"))
+
+    if rejected:
+        reasons = []
+        if not _clean(lead.get("company_name")):
+            reasons.append("company name is missing")
+        if not website:
+            reasons.append("company website is missing")
+        if not any((email, phone, linkedin_url, contact_page)):
+            reasons.append("no contact path was found")
+        if "email_invalid" in warnings:
+            reasons.append("email verification marked the email invalid")
+        return f"Rejected because {', '.join(reasons) or 'it did not pass the quality rules'}."
+
+    signals = []
+    if website:
+        signals.append("official website")
+    if email:
+        signals.append("email")
+    if phone:
+        signals.append("phone")
+    if linkedin_url:
+        signals.append("LinkedIn")
+    if contact_page:
+        signals.append("contact page")
+    if value_prop:
+        signals.append("business description")
+
+    signal_text = ", ".join(dict.fromkeys(signals)) or "basic company evidence"
+    note_text = ""
+    if notes:
+        readable_notes = [note.replace("_", " ") for note in notes[:3]]
+        note_text = f" Extra signals: {', '.join(readable_notes)}."
+    return f"Accepted as {quality_status.lower()} because {company} has {signal_text}. Quality score: {score}/100.{note_text}"
+
+
 def _field_source_map(lead: Dict[str, Any]) -> Dict[str, str]:
     existing = lead.get("field_sources")
     if isinstance(existing, dict):
@@ -213,6 +264,14 @@ def score_lead(lead: Dict[str, Any], verification: Dict[str, Any] | None = None)
             quality_status = "Usable"
         else:
             quality_status = "Partial"
+        acceptance_reason = _acceptance_explanation(
+            lead=lead,
+            score=score,
+            quality_status=quality_status,
+            rejected=rejected,
+            notes=notes,
+            warnings=warnings,
+        )
 
         return {
             "quality_score": score,
@@ -220,6 +279,8 @@ def score_lead(lead: Dict[str, Any], verification: Dict[str, Any] | None = None)
             "quality_status": quality_status,
             "usable": usable,
             "rejected": rejected,
+            "acceptance_reason": acceptance_reason,
+            "confidence_explanation": acceptance_reason,
             "quality_notes": notes,
             "quality_warnings": warnings,
             "field_sources": _field_source_map(lead),
@@ -232,6 +293,8 @@ def score_lead(lead: Dict[str, Any], verification: Dict[str, Any] | None = None)
             "quality_status": "Error",
             "usable": False,
             "rejected": True,
+            "acceptance_reason": "Rejected because the scoring step failed.",
+            "confidence_explanation": "Rejected because the scoring step failed.",
             "quality_notes": [],
             "quality_warnings": ["scoring_error"],
             "field_sources": {},

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bulk Email Verifier</title>
+  <title>Bulk Contact Verifier</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -119,7 +119,8 @@
 
     input[type="file"],
     input[type="text"],
-    input[type="number"] {
+    input[type="number"],
+    select {
       width: 100%;
       border: 1px solid #cfd9ea;
       border-radius: 8px;
@@ -295,9 +296,9 @@
     <header>
       <div class="title-block">
         <div class="eyebrow">Bulk verifier</div>
-        <h1>Excel Email Verification</h1>
+        <h1>Excel Contact Verification</h1>
         <p class="subtext">
-          Upload an Excel workbook, verify the emails with the project SMTP/DNS verifier, and download the same workbook with a new verification status column.
+          Upload an Excel workbook, choose email or phone verification, and download the same workbook with a new status column.
         </p>
       </div>
       <a class="nav-link" href="/leads">Back to lead generator</a>
@@ -311,10 +312,24 @@
           <div id="file-name" class="file-name">No file selected</div>
         </div>
 
+        <div class="fields" style="grid-template-columns: 1fr 1fr;">
+          <div>
+            <label for="verification-type">Verification type</label>
+            <select id="verification-type" name="verification_type">
+              <option value="email" selected>Email verification</option>
+              <option value="phone">Phone validation</option>
+            </select>
+          </div>
+          <div>
+            <label for="phone-region">Phone region</label>
+            <input id="phone-region" name="phone_region" type="text" value="US" placeholder="US" />
+          </div>
+        </div>
+
         <div class="fields">
           <div>
-            <label for="email-column">Email column header</label>
-            <input id="email-column" name="email_column" type="text" placeholder="Auto-detect, or enter Email / Contact Email" />
+            <label id="column-label" for="column-header">Email column header</label>
+            <input id="column-header" name="column_header" type="text" placeholder="Auto-detect, or enter Email / Contact Email" />
           </div>
           <div>
             <label for="concurrency">Parallel checks</label>
@@ -327,7 +342,7 @@
           <button id="reset-btn" class="secondary" type="button">Reset</button>
         </div>
 
-        <div class="note">
+        <div id="mode-note" class="note">
           For best results, use a sheet with a clear email column like <strong>Email</strong>, <strong>Contact Email</strong>, or <strong>Work Email</strong>. The output adds <strong>email_verification_status</strong>.
         </div>
       </form>
@@ -340,7 +355,7 @@
             <strong id="total-count">0</strong>
           </div>
           <div class="metric">
-            <span>Verified</span>
+            <span id="valid-label">Verified</span>
             <strong id="valid-count" class="ok">0</strong>
           </div>
           <div class="metric">
@@ -363,21 +378,47 @@
     const form = document.getElementById('verify-form');
     const fileInput = document.getElementById('excel-file');
     const fileName = document.getElementById('file-name');
+    const verificationType = document.getElementById('verification-type');
+    const columnHeader = document.getElementById('column-header');
+    const columnLabel = document.getElementById('column-label');
+    const modeNote = document.getElementById('mode-note');
     const verifyBtn = document.getElementById('verify-btn');
     const resetBtn = document.getElementById('reset-btn');
     const dropZone = document.getElementById('drop-zone');
     const log = document.getElementById('log');
     const totalCount = document.getElementById('total-count');
     const validCount = document.getElementById('valid-count');
+    const validLabel = document.getElementById('valid-label');
     const riskyCount = document.getElementById('risky-count');
     const invalidCount = document.getElementById('invalid-count');
 
     function setCounts(summary = {}) {
       const counts = summary.status_counts || {};
-      totalCount.textContent = summary.total_emails || 0;
+      totalCount.textContent = summary.total_checks || summary.total_emails || summary.total_phones || 0;
       validCount.textContent = counts.valid || 0;
       riskyCount.textContent = counts.needs_manual_review || counts.risky || 0;
       invalidCount.textContent = counts.invalid || 0;
+    }
+
+    function currentMode() {
+      return verificationType.value === 'phone' ? 'phone' : 'email';
+    }
+
+    function updateModeUi() {
+      const mode = currentMode();
+      if (mode === 'phone') {
+        columnLabel.textContent = 'Phone column header';
+        columnHeader.placeholder = 'Auto-detect, or enter Phone / Mobile / Contact Phone';
+        verifyBtn.textContent = 'Validate Phones';
+        validLabel.textContent = 'Valid';
+        modeNote.innerHTML = 'For best results, use a sheet with a clear phone column like <strong>Phone</strong>, <strong>Mobile</strong>, or <strong>Contact Phone</strong>. The output adds <strong>phone_verification_status</strong>.';
+      } else {
+        columnLabel.textContent = 'Email column header';
+        columnHeader.placeholder = 'Auto-detect, or enter Email / Contact Email';
+        verifyBtn.textContent = 'Verify Emails';
+        validLabel.textContent = 'Verified';
+        modeNote.innerHTML = 'For best results, use a sheet with a clear email column like <strong>Email</strong>, <strong>Contact Email</strong>, or <strong>Work Email</strong>. The output adds <strong>email_verification_status</strong>.';
+      }
     }
 
     function setLog(lines) {
@@ -429,10 +470,14 @@
 
     resetBtn.addEventListener('click', () => {
       form.reset();
+      updateModeUi();
       fileName.textContent = 'No file selected';
       setCounts();
       setLog(['Waiting for an Excel upload.']);
     });
+
+    verificationType.addEventListener('change', updateModeUi);
+    updateModeUi();
 
     form.addEventListener('submit', async event => {
       event.preventDefault();
@@ -443,13 +488,18 @@
       }
 
       const formData = new FormData(form);
+      const mode = currentMode();
       verifyBtn.disabled = true;
-      verifyBtn.textContent = 'Verifying...';
+      verifyBtn.textContent = mode === 'phone' ? 'Validating...' : 'Verifying...';
       setCounts();
       setLog([
         `Uploading ${file.name}.`,
-        'Running DNS, MX, SMTP, catch-all, and recipient checks.',
-        'This can take time for 100 emails because real mail servers are being contacted.'
+        mode === 'phone'
+          ? 'Reading only the selected phone column and validating phone formats.'
+          : 'Reading only the selected email column and running DNS, MX, SMTP, catch-all, and recipient checks.',
+        mode === 'phone'
+          ? 'Phone validation is format/region based; ownership is not telecom-verified.'
+          : 'This can take time for 100 emails because real mail servers are being contacted.'
       ]);
 
       try {
@@ -466,7 +516,7 @@
           throw new Error(detail || `Request failed with status ${response.status}`);
         }
 
-        const summaryHeader = response.headers.get('x-email-verification-summary');
+        const summaryHeader = response.headers.get('x-bulk-verification-summary') || response.headers.get('x-email-verification-summary');
         const summary = summaryHeader ? JSON.parse(summaryHeader) : {};
         const blob = await response.blob();
         const disposition = response.headers.get('content-disposition') || '';
@@ -475,11 +525,13 @@
 
         setCounts(summary);
         const sheetLines = (summary.sheets || []).map(item => {
-          const found = item.email_column_found ? 'email column found' : 'email column missing';
-          return `${item.sheet}: ${found}, ${item.emails || 0} email(s).`;
+          const itemMode = item.mode || summary.mode || mode;
+          const found = item.column_found ? `${itemMode} column found` : `${itemMode} column missing`;
+          const count = item.checks || item.emails || item.phones || 0;
+          return `${item.sheet}: ${found}, ${count} ${itemMode === 'phone' ? 'phone' : 'email'} check(s).`;
         });
         setLog([
-          `Completed ${summary.total_emails || 0} email verification check(s).`,
+          `Completed ${summary.total_checks || summary.total_emails || summary.total_phones || 0} ${mode === 'phone' ? 'phone validation' : 'email verification'} check(s).`,
           `Downloaded ${outputName}.`,
           ...sheetLines
         ]);
@@ -491,7 +543,7 @@
         ]);
       } finally {
         verifyBtn.disabled = false;
-        verifyBtn.textContent = 'Verify Excel';
+        updateModeUi();
       }
     });
   </script>

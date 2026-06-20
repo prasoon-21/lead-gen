@@ -23,6 +23,12 @@ from core.services.velit.discovery import (
     normalize_company_key,
     normalize_domain,
 )
+from core.utils.lead_summary import build_plain_lead_summary
+from core.utils.phone_quality import (
+    build_phone_summary,
+    extract_phone_candidates,
+    phone_candidates_from_values,
+)
 
 
 class VelitLeadPipeline(ProductionLeadPipeline):
@@ -82,6 +88,12 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             default=8,
             minimum=2,
             maximum=20,
+        )
+        self.playwright_scrape_limit = self._bounded_int_env(
+            "VELIT_PLAYWRIGHT_SCRAPE_LIMIT",
+            default=8,
+            minimum=0,
+            maximum=30,
         )
 
     async def run(
@@ -249,7 +261,11 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             url = str(item.get("url") or "").strip()
             title = str(item.get("title") or "").strip()
             content = str(item.get("content") or "").strip()
-            company_name = str(item.get("company_name") or "").strip() or self._company_name_from_title_or_url(title, url)
+            company_name = self._resolve_company_name(
+                str(item.get("company_name") or "").strip(),
+                title=title,
+                url=url,
+            )
             company_name = self._clean_company_candidate(company_name)
             if not self._looks_like_valid_company_name(company_name):
                 continue
@@ -378,7 +394,10 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         enriched = dict(item)
         if index >= self.max_contact_scrapes:
             return enriched
-        scrape = await self._scrape_site_contact_signals(str(item.get("url") or ""))
+        scrape = await self._scrape_site_contact_signals(
+            str(item.get("url") or ""),
+            allow_playwright=index < self.playwright_scrape_limit,
+        )
         if not scrape:
             return enriched
 
@@ -398,13 +417,14 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         enriched["contact_signals"] = scrape
         return enriched
 
-    async def _scrape_site_contact_signals(self, base_url: str) -> Dict[str, List[str]]:
+    async def _scrape_site_contact_signals(self, base_url: str, *, allow_playwright: bool = True) -> Dict[str, List[str]]:
         if not base_url:
             return {}
         timeout = httpx.Timeout(connect=4.0, read=6.0, write=4.0, pool=4.0)
         results: Dict[str, List[str]] = {
             "emails": [],
             "phones": [],
+            "phone_candidates": [],
             "linkedin": [],
             "instagram": [],
             "facebook": [],
@@ -430,7 +450,8 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 if response.status_code >= 400:
                     continue
                 html = response.text or ""
-                self._collect_signal_values(results, html)
+                source_type = self._phone_source_type_for_path(path)
+                self._collect_signal_values(results, html, source_type=source_type, source_url=page_url)
                 if path in {"", "/contact", "/about"}:
                     extra_links.extend(self._extract_relevant_internal_links(base_home, html))
             for page_url in extra_links[: self.max_extra_site_links]:
@@ -443,14 +464,99 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                     continue
                 if response.status_code >= 400:
                     continue
-                self._collect_signal_values(results, response.text or "")
-        return {key: values[:5] for key, values in results.items() if values}
+                source_type = self._phone_source_type_for_path(urlparse(page_url).path)
+                self._collect_signal_values(results, response.text or "", source_type=source_type, source_url=page_url)
+        if allow_playwright and self._needs_rendered_scrape(results):
+            rendered_results = await self._scrape_site_contact_signals_with_playwright(base_home)
+            self._merge_signal_results(results, rendered_results)
+        return {
+            key: values[:12] if key == "phone_candidates" else values[:5]
+            for key, values in results.items()
+            if values
+        }
+
+    @staticmethod
+    def _needs_rendered_scrape(results: Dict[str, List[Any]]) -> bool:
+        signal_count = sum(len(results.get(key) or []) for key in ("emails", "phones", "linkedin", "instagram", "facebook", "youtube"))
+        return signal_count < 2
 
     @classmethod
-    def _collect_signal_values(cls, results: Dict[str, List[str]], html: str) -> None:
+    def _merge_signal_results(cls, target: Dict[str, List[Any]], source: Dict[str, List[Any]]) -> None:
+        for key, values in (source or {}).items():
+            bucket = target.setdefault(key, [])
+            if key == "phone_candidates":
+                seen = {
+                    str(item.get("e164") or item.get("display"))
+                    for item in bucket
+                    if isinstance(item, dict)
+                }
+                for item in values or []:
+                    if not isinstance(item, dict):
+                        continue
+                    item_key = str(item.get("e164") or item.get("display"))
+                    if item_key and item_key not in seen:
+                        seen.add(item_key)
+                        bucket.append(item)
+                continue
+            for value in values or []:
+                if value and value not in bucket:
+                    bucket.append(value)
+
+    async def _scrape_site_contact_signals_with_playwright(self, base_home: str) -> Dict[str, List[Any]]:
+        try:
+            from playwright.async_api import async_playwright
+        except Exception as exc:
+            self.logger.info("velit_playwright_not_available", extra={"payload": str(exc)})
+            return {}
+
+        results: Dict[str, List[Any]] = {
+            "emails": [],
+            "phones": [],
+            "phone_candidates": [],
+            "linkedin": [],
+            "instagram": [],
+            "facebook": [],
+            "youtube": [],
+        }
+        pages = [
+            base_home,
+            urljoin(base_home.rstrip("/") + "/", "contact"),
+            urljoin(base_home.rstrip("/") + "/", "about"),
+        ]
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(
+                    user_agent=BROWSER_VERIFICATION_HEADERS.get("User-Agent"),
+                    viewport={"width": 1366, "height": 900},
+                )
+                for page_url in pages:
+                    try:
+                        await page.goto(page_url, wait_until="networkidle", timeout=12000)
+                        html = await page.content()
+                    except Exception:
+                        continue
+                    source_type = self._phone_source_type_for_path(urlparse(page_url).path)
+                    self._collect_signal_values(results, html, source_type=source_type, source_url=page_url)
+                await browser.close()
+        except Exception as exc:
+            self.logger.info("velit_playwright_scrape_failed", extra={"payload": str(exc)})
+            return {}
+        return results
+
+    @classmethod
+    def _collect_signal_values(
+        cls,
+        results: Dict[str, List[Any]],
+        html: str,
+        *,
+        source_type: str = "text",
+        source_url: str = "",
+    ) -> None:
         text = html or ""
-        emails = list(dict.fromkeys(cls._email_pattern().findall(text)))
-        phones = list(dict.fromkeys(cls._extract_all_phones(text)))
+        emails = cls._valid_email_matches(text)
+        phone_candidates = extract_phone_candidates(text, source_type=source_type, source_url=source_url)
+        phones = [candidate.get("display", "") for candidate in phone_candidates if candidate.get("display")]
         linkedin = list(dict.fromkeys(re.findall(r"https?://(?:www\.)?linkedin\.com/[^\s\"'<>]+", text, re.IGNORECASE)))
         instagram = list(dict.fromkeys(re.findall(r"https?://(?:www\.)?instagram\.com/[^\s\"'<>]+", text, re.IGNORECASE)))
         facebook = list(dict.fromkeys(re.findall(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", text, re.IGNORECASE)))
@@ -462,6 +568,16 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         for value in phones:
             if value not in results["phones"]:
                 results["phones"].append(value)
+        seen_candidate_keys = {
+            str(candidate.get("e164") or candidate.get("display"))
+            for candidate in results.get("phone_candidates", [])
+            if isinstance(candidate, dict)
+        }
+        for candidate in phone_candidates:
+            key = str(candidate.get("e164") or candidate.get("display"))
+            if key and key not in seen_candidate_keys:
+                seen_candidate_keys.add(key)
+                results["phone_candidates"].append(candidate)
         for value in linkedin:
             if value not in results["linkedin"]:
                 results["linkedin"].append(value)
@@ -494,6 +610,23 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 collected.append(cleaned)
         return collected
 
+    @staticmethod
+    def _phone_source_type_for_path(path: str) -> str:
+        lowered = (path or "").lower()
+        if "contact" in lowered:
+            return "contact_page"
+        if "support" in lowered:
+            return "support_page"
+        if "sales" in lowered:
+            return "sales_page"
+        if "team" in lowered:
+            return "team_page"
+        if "about" in lowered:
+            return "about_page"
+        if not lowered or lowered == "/":
+            return "homepage"
+        return "text"
+
     async def _score_one(
         self,
         item: Dict[str, Any],
@@ -513,7 +646,15 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         signals = item.get("contact_signals") if isinstance(item.get("contact_signals"), dict) else {}
         if signals:
             lead["contact_email"] = self._first_non_empty(lead.get("contact_email"), *(signals.get("emails") or []))
-            lead["contact_phone"] = self._first_non_empty(lead.get("contact_phone"), *(signals.get("phones") or []))
+            scrape_phone_summary = build_phone_summary(
+                signals.get("phone_candidates")
+                or phone_candidates_from_values(
+                    signals.get("phones") or [],
+                    source_type="contact_page",
+                    source_url=lead.get("company_website") or "",
+                )
+            )
+            self._apply_phone_summary(lead, scrape_phone_summary)
             lead["company_linkedin_url"] = self._first_non_empty(*(signals.get("linkedin") or []))
             lead["instagram_url"] = self._first_non_empty(*(signals.get("instagram") or []))
             lead["facebook_url"] = self._first_non_empty(*(signals.get("facebook") or []))
@@ -533,6 +674,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         lead.update({key: value for key, value in quality.items() if key != "quality_score"})
         lead["quality_score"] = max(int(lead.get("quality_score") or 0), int(quality.get("quality_score") or 0))
         lead["quality_score"] = max(0, min(int(lead["quality_score"]), 100))
+        lead["lead_summary"] = build_plain_lead_summary(lead)
         return lead
 
     async def _recover_missing_contacts(
@@ -571,7 +713,15 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 candidates=recovery.get("emails") or [],
                 website_domain=domain,
             )
-            item["contact_phone"] = self._first_non_empty(item.get("contact_phone"), *(recovery.get("phones") or []))
+            recovery_phone_summary = build_phone_summary(
+                recovery.get("phone_candidates")
+                or phone_candidates_from_values(
+                    recovery.get("phones") or [],
+                    source_type="tavily_contact_search",
+                    source_url=item.get("company_website") or "",
+                )
+            )
+            self._apply_phone_summary(item, recovery_phone_summary)
             item["linkedin_url"] = self._first_non_empty(item.get("linkedin_url"), *(recovery.get("person_linkedin") or []))
             item["company_linkedin_url"] = self._first_non_empty(item.get("company_linkedin_url"), *(recovery.get("company_linkedin") or []))
             item["instagram_url"] = self._first_non_empty(item.get("instagram_url"), *(recovery.get("instagram") or []))
@@ -590,6 +740,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             item.update({key: value for key, value in quality.items() if key != "quality_score"})
             item["quality_score"] = max(int(item.get("quality_score") or 0), int(quality.get("quality_score") or 0))
             item["quality_score"] = max(0, min(int(item["quality_score"]), 100))
+            item["lead_summary"] = build_plain_lead_summary(item)
             return item
 
         recovered = await asyncio.gather(
@@ -624,6 +775,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         signals: Dict[str, List[str]] = {
             "emails": [],
             "phones": [],
+            "phone_candidates": [],
             "person_linkedin": [],
             "company_linkedin": [],
             "instagram": [],
@@ -648,15 +800,15 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             except Exception:
                 continue
             for result in data.get("results") or []:
+                url = str(result.get("url") or "").strip()
                 blob = " ".join(
                     [
                         str(result.get("title") or ""),
                         str(result.get("content") or ""),
-                        str(result.get("url") or ""),
+                        url,
                     ]
                 )
-                self._merge_contact_blob_into_signals(signals, blob)
-                url = str(result.get("url") or "").strip()
+                self._merge_contact_blob_into_signals(signals, blob, source_url=url)
                 if "linkedin.com/in/" in url and url not in signals["person_linkedin"]:
                     signals["person_linkedin"].append(url)
                 if "linkedin.com/company/" in url and url not in signals["company_linkedin"]:
@@ -667,18 +819,33 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                     signals["facebook"].append(url)
                 if ("youtube.com/" in url or "youtu.be/" in url) and url not in signals["youtube"]:
                     signals["youtube"].append(url)
-        return {key: values[:5] for key, values in signals.items() if values}
+        return {
+            key: values[:12] if key == "phone_candidates" else values[:5]
+            for key, values in signals.items()
+            if values
+        }
 
     @classmethod
-    def _merge_contact_blob_into_signals(cls, signals: Dict[str, List[str]], blob: str) -> None:
-        emails = list(dict.fromkeys(cls._email_pattern().findall(blob or "")))
-        phones = list(dict.fromkeys(cls._extract_all_phones(blob or "")))
+    def _merge_contact_blob_into_signals(cls, signals: Dict[str, List[Any]], blob: str, *, source_url: str = "") -> None:
+        emails = cls._valid_email_matches(blob or "")
+        phone_candidates = extract_phone_candidates(blob or "", source_type="tavily_contact_search", source_url=source_url)
+        phones = [candidate.get("display", "") for candidate in phone_candidates if candidate.get("display")]
         for value in emails:
             if value not in signals["emails"]:
                 signals["emails"].append(value)
         for value in phones:
             if value not in signals["phones"]:
                 signals["phones"].append(value)
+        seen_candidate_keys = {
+            str(candidate.get("e164") or candidate.get("display"))
+            for candidate in signals.get("phone_candidates", [])
+            if isinstance(candidate, dict)
+        }
+        for candidate in phone_candidates:
+            key = str(candidate.get("e164") or candidate.get("display"))
+            if key and key not in seen_candidate_keys:
+                seen_candidate_keys.add(key)
+                signals["phone_candidates"].append(candidate)
 
     @classmethod
     def _pick_best_email(cls, *, existing: Any, candidates: List[str], website_domain: str) -> str:

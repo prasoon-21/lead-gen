@@ -25,6 +25,8 @@ except ImportError:  # pragma: no cover - optional dependency
     build = None
     GOOGLE_API_CLIENT_AVAILABLE = False
 
+from core.utils.lead_summary import build_plain_lead_summary
+
 
 class TodoSheetStore:
     LEAD_META_PREFIX = "[AGENTIC_META]"
@@ -56,9 +58,15 @@ class TodoSheetStore:
     LEAD_HEADERS = [
         "Company Name",
         "Specialty",
+        "Lead Summary",
+        "Why Accepted",
         "Contact Name",
         "Email",
         "Phone",
+        "Alternate Phones",
+        "Phone Confidence",
+        "Phone Source",
+        "Phone Status",
         "Website",
         "City",
         "State",
@@ -509,15 +517,27 @@ class TodoSheetStore:
         """
         self._require_ready()
         notes = str(lead.get("notes", "") or lead.get("value_proposition", "")).strip()
+        alternate_phones = lead.get("alternate_phones") or []
+        alternate_phones_text = (
+            alternate_phones.strip()
+            if isinstance(alternate_phones, str)
+            else " | ".join(str(phone).strip() for phone in alternate_phones if str(phone).strip())
+        )
         
         metadata = self._build_lead_metadata(lead)
         serialized_notes = self._serialize_lead_notes(notes, metadata)
         row_data = {
             "Company Name": str(lead.get("company_name", "")).strip(),
             "Specialty":    str(lead.get("specialty", "")).strip(),
+            "Lead Summary": build_plain_lead_summary(lead),
+            "Why Accepted": str(lead.get("acceptance_reason", "") or lead.get("confidence_explanation", "")).strip(),
             "Contact Name": str(lead.get("contact_name", "") or lead.get("contact_person_name", "") or lead.get("founder_name", "")).strip(),
             "Email":        str(lead.get("email", "") or lead.get("contact_email", "")).strip(),
             "Phone":        str(lead.get("phone", "") or lead.get("contact_phone", "")).strip(),
+            "Alternate Phones": alternate_phones_text,
+            "Phone Confidence": str(lead.get("phone_confidence", "")).strip(),
+            "Phone Source": str(lead.get("phone_source", "")).strip(),
+            "Phone Status": str(lead.get("phone_validation_status", "")).strip(),
             "Website":      str(lead.get("website", "") or lead.get("company_website", "")).strip(),
             "City":         str(lead.get("city", "")).strip(),
             "State":        str(lead.get("state", "")).strip(),
@@ -568,10 +588,17 @@ class TodoSheetStore:
             "confidence": str(lead.get("confidence", "")).strip(),
             "quality_score": lead.get("quality_score", 0),
             "quality_status": str(lead.get("quality_status", "")).strip(),
+            "lead_summary": build_plain_lead_summary(lead),
+            "acceptance_reason": str(lead.get("acceptance_reason", "") or lead.get("confidence_explanation", "")).strip(),
             "contact_person_title": str(lead.get("contact_person_title", "")).strip(),
             "contact_person_name": str(lead.get("contact_person_name", "") or lead.get("founder_name", "")).strip(),
             "field_sources": lead.get("field_sources", {}) or {},
             "contact_paths": lead.get("contact_paths", []) or [],
+            "alternate_phones": lead.get("alternate_phones", []) or [],
+            "phone_confidence": lead.get("phone_confidence", ""),
+            "phone_source": str(lead.get("phone_source", "")).strip(),
+            "phone_validation_status": str(lead.get("phone_validation_status", "")).strip(),
+            "phone_type": str(lead.get("phone_type", "")).strip(),
         }
 
         # Build citation summary

@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from core.utils.email_verify import verify_email_legitimacy
 from core.utils.lead_summary import build_plain_lead_summary
+from core.utils.phone_company_match import PhoneCompanyMatcher
 from core.utils.phone_verify import verify_phone_legitimacy
 
 
@@ -48,7 +49,24 @@ PHONE_HEADER_ALIASES = {
     "workphone",
     "businessphone",
 }
+WEBSITE_HEADER_ALIASES = {
+    "website",
+    "companywebsite",
+    "url",
+    "companyurl",
+    "domain",
+    "web",
+    "site",
+    "officialwebsite",
+}
 SUMMARY_HEADER_ALIASES = {"leadsummary", "businesssummary", "plainenglishsummary", "whattheydo", "summary"}
+PHONE_COMPANY_MATCH_HEADERS = {
+    "status": "phone_company_match_status",
+    "source": "phone_company_match_source",
+    "confidence": "phone_company_match_confidence",
+    "matched_phone": "phone_company_matched_number",
+    "scraped_phones": "phone_numbers_found_on_website",
+}
 HEADER_TO_LEAD_KEY = {
     "companyname": "company_name",
     "company": "company_name",
@@ -161,6 +179,17 @@ def _find_phone_column(ws, requested_header: str = "") -> int | None:
     return best_column if best_hits else None
 
 
+def _find_website_column(ws) -> int | None:
+    headers = [ws.cell(row=1, column=column).value for column in range(1, ws.max_column + 1)]
+    for index, header in enumerate(headers, start=1):
+        normalized = _normalize_header(header)
+        if normalized in WEBSITE_HEADER_ALIASES:
+            return index
+        if ("website" in normalized or "url" in normalized or "domain" in normalized) and "linkedin" not in normalized:
+            return index
+    return None
+
+
 def _ensure_status_column(ws, header: str = DEFAULT_STATUS_HEADER) -> int:
     normalized_target = _normalize_header(header)
     for column in range(1, ws.max_column + 1):
@@ -170,6 +199,10 @@ def _ensure_status_column(ws, header: str = DEFAULT_STATUS_HEADER) -> int:
     column = ws.max_column + 1
     ws.cell(row=1, column=column).value = header
     return column
+
+
+def _ensure_phone_match_columns(ws) -> dict[str, int]:
+    return {key: _ensure_status_column(ws, header) for key, header in PHONE_COMPANY_MATCH_HEADERS.items()}
 
 
 def _status_header_for_mode(mode: str) -> str:
@@ -272,6 +305,34 @@ def _phone_verification_label(verification: dict) -> str:
     return label
 
 
+def _phone_match_status_label(match: dict | None) -> str:
+    if not match:
+        return ""
+    status = str(match.get("status") or "").strip()
+    message = str(match.get("message") or "").strip()
+    return f"{status} - {message}" if message else status
+
+
+def _write_phone_match_result(ws, row: int, match_cols: dict[str, int], match: dict | None) -> None:
+    if not match_cols:
+        return
+    match = match or {}
+    scraped_phones = match.get("scraped_phones") or []
+    if not isinstance(scraped_phones, list):
+        scraped_phones = [scraped_phones]
+    values = {
+        "status": _phone_match_status_label(match),
+        "source": match.get("source_url", ""),
+        "confidence": match.get("confidence", ""),
+        "matched_phone": match.get("matched_phone", ""),
+        "scraped_phones": " | ".join(str(phone).strip() for phone in scraped_phones if str(phone).strip()),
+    }
+    for key, value in values.items():
+        column = match_cols.get(key)
+        if column:
+            ws.cell(row=row, column=column).value = value
+
+
 def _load_workbook_from_bytes(data: bytes):
     try:
         from openpyxl import load_workbook
@@ -308,10 +369,11 @@ async def verify_excel_emails(
         raise HTTPException(status_code=413, detail="Excel file is too large. Keep it under 8 MB.")
 
     workbook = await run_in_threadpool(_load_workbook_from_bytes, data)
-    jobs: list[tuple[Any, int, int, str]] = []
-    no_value_rows: list[tuple[Any, int, int]] = []
+    jobs: list[tuple[Any, int, int, int, str, str, dict[str, int]]] = []
+    no_value_rows: list[tuple[Any, int, int, dict[str, int]]] = []
     sheet_summaries: list[dict[str, Any]] = []
     requested_header = column_header or email_column
+    phone_matcher = PhoneCompanyMatcher() if mode == "phone" else None
 
     for ws in workbook.worksheets:
         value_col = _find_phone_column(ws, requested_header) if mode == "phone" else _find_email_column(ws, requested_header)
@@ -331,26 +393,31 @@ async def verify_excel_emails(
             continue
 
         source_headers = [ws.cell(row=1, column=column).value for column in range(1, ws.max_column + 1)]
+        website_col = _find_website_column(ws) if mode == "phone" else None
         summary_col = _ensure_summary_column(ws)
         status_col = _ensure_status_column(ws, _status_header_for_mode(mode))
+        phone_match_cols = _ensure_phone_match_columns(ws) if mode == "phone" else {}
         count = 0
         for row in range(2, ws.max_row + 1):
             _write_lead_summary_if_needed(ws, row, summary_col, source_headers)
             raw_value = ws.cell(row=row, column=value_col).value
             raw_text = str(raw_value or "").strip()
             if not raw_text or raw_text.lower() in EMPTY_EMAIL_VALUES:
-                no_value_rows.append((ws, row, status_col))
+                no_value_rows.append((ws, row, status_col, phone_match_cols))
                 continue
 
             value = raw_text
+            website_value = ""
+            if website_col:
+                website_value = str(ws.cell(row=row, column=website_col).value or "").strip()
             if mode == "email":
                 email = _extract_email(raw_text)
                 value = email or raw_text
                 if not value:
-                    no_value_rows.append((ws, row, status_col))
+                    no_value_rows.append((ws, row, status_col, phone_match_cols))
                     continue
 
-            jobs.append((ws, row, status_col, value))
+            jobs.append((ws, row, value_col, status_col, value, website_value, phone_match_cols))
             count += 1
         sheet_summaries.append(
             {
@@ -368,8 +435,19 @@ async def verify_excel_emails(
     if not jobs:
         if no_value_rows:
             empty_status = "no_phone_found" if mode == "phone" else "no_email_found"
-            for ws, row, status_col in no_value_rows:
+            for ws, row, status_col, match_cols in no_value_rows:
                 ws.cell(row=row, column=status_col).value = empty_status
+                if mode == "phone":
+                    _write_phone_match_result(
+                        ws,
+                        row,
+                        match_cols,
+                        {
+                            "status": "no_phone_found",
+                            "confidence": "low",
+                            "message": "No phone number was available to match against the company website.",
+                        },
+                    )
             output = io.BytesIO()
             await run_in_threadpool(workbook.save, output)
             output.seek(0)
@@ -409,31 +487,52 @@ async def verify_excel_emails(
     concurrency = max(1, min(int(max_concurrency or 4), 8))
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def verify_job(job: tuple[Any, int, int, str]):
+    async def verify_job(job: tuple[Any, int, int, int, str, str, dict[str, int]]):
         async with semaphore:
-            ws, row, status_col, value = job
+            ws, row, value_col, status_col, value, website_value, match_cols = job
+            phone_match = None
             if mode == "phone":
                 verification = await run_in_threadpool(verify_phone_legitimacy, value, region=phone_region or "US")
+                if phone_matcher:
+                    match_phone = verification.get("e164") or verification.get("normalized") or value
+                    phone_match = await phone_matcher.verify(match_phone, website_value, region=phone_region or "US")
             else:
                 verification = await run_in_threadpool(verify_email_legitimacy, value)
-            return ws, row, status_col, verification
+            return ws, row, value_col, status_col, verification, phone_match, match_cols
 
     results = await asyncio.gather(*(verify_job(job) for job in jobs))
     status_counts: dict[str, int] = {}
 
     if no_value_rows:
         empty_status = "no_phone_found" if mode == "phone" else "no_email_found"
-        for ws, row, status_col in no_value_rows:
+        for ws, row, status_col, match_cols in no_value_rows:
             ws.cell(row=row, column=status_col).value = empty_status
+            if mode == "phone":
+                _write_phone_match_result(
+                    ws,
+                    row,
+                    match_cols,
+                    {
+                        "status": "no_phone_found",
+                        "confidence": "low",
+                        "message": "No phone number was available to match against the company website.",
+                    },
+                )
         status_counts[empty_status] = len(no_value_rows)
 
-    for ws, row, status_col, verification in results:
+    for ws, row, value_col, status_col, verification, phone_match, match_cols in results:
         status = str(verification.get("status") or "unknown").lower()
         summary_status = "needs_manual_review" if status == "risky" else status
         status_counts[summary_status] = status_counts.get(summary_status, 0) + 1
+        if mode == "phone" and status in {"valid", "risky"}:
+            normalized_phone = str(verification.get("normalized") or verification.get("e164") or "").strip()
+            if normalized_phone:
+                ws.cell(row=row, column=value_col).value = normalized_phone
         ws.cell(row=row, column=status_col).value = (
             _phone_verification_label(verification) if mode == "phone" else _verification_label(verification)
         )
+        if mode == "phone":
+            _write_phone_match_result(ws, row, match_cols, phone_match)
 
     output = io.BytesIO()
     await run_in_threadpool(workbook.save, output)

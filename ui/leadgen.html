@@ -552,12 +552,20 @@
     <div class="col-span-12 lg:col-span-8 flex flex-col gap-4">
 
       <!-- Action bar -->
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-xs text-lv-500">Results are shown in real-time as the agent discovers leads via web search &amp; scraping.</p>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap justify-end gap-2">
+          <a id="bulk-import-btn" href="/email-verifier" title="Upload Excel leads for bulk email or phone verification" class="px-4 py-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-[11px] font-bold hover:bg-cyan-400/20 transition-all flex items-center gap-1.5 text-cyan-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
+            Bulk Import
+          </a>
           <button id="export-csv-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             Export CSV
+          </button>
+          <button id="contact-export-btn" title="Export only leads containing an email, phone number, and company website" class="px-4 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-[11px] font-bold hover:bg-green-500/20 transition-all flex items-center gap-1.5 text-green-300">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5 2a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
+            Contact Export
           </button>
           <button id="export-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -2744,6 +2752,73 @@
       downloadBlob(new Blob([[header, ...rows].join('\n')], { type:'text/csv' }),
                    `leads_${new Date().toISOString().slice(0,10)}.csv`);
       addLog(`📥 Exported ${state.leads.length} leads as CSV.`, 'success');
+    });
+
+    function hasCompleteContactDetails(lead) {
+      const email = String(lead.contact_email || '').trim();
+      const phoneDigits = String(lead.contact_phone || '').replace(/\D/g, '');
+      const website = String(lead.company_website || '').trim();
+      const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email) && !isPlaceholderEmail(email);
+      const hasPhone = phoneDigits.length >= 10 && phoneDigits.length <= 15;
+      let hasWebsite = false;
+      try {
+        const parsed = new URL(/^https?:\/\//i.test(website) ? website : `https://${website}`);
+        const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+        hasWebsite = ['http:', 'https:'].includes(parsed.protocol)
+          && host.includes('.')
+          && !['domain.com', 'example.com', 'example.net', 'example.org'].includes(host);
+      } catch (_) {
+        hasWebsite = false;
+      }
+      return hasEmail && hasPhone && hasWebsite;
+    }
+
+    document.getElementById('contact-export-btn').addEventListener('click', () => {
+      if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
+      const contactLeads = state.leads.filter(hasCompleteContactDetails);
+      if (!contactLeads.length) {
+        addLog('Contact Export found no leads containing all three required fields: email, phone, and website.', 'error');
+        return;
+      }
+
+      const cols = [
+        { header: 'Company Name', key: l => l.company_name },
+        { header: 'Specialty', key: l => l.specialty || l.industry },
+        { header: 'Lead Summary', key: l => l.lead_summary || buildLeadSummary(l) },
+        { header: 'Why Accepted', key: l => l.acceptance_reason || l.confidence_explanation || '' },
+        { header: 'Contact Name', key: l => l.contact_person_name || l.founder_name },
+        { header: 'Person LinkedIn', key: l => l.linkedin_url },
+        { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
+        { header: 'Email', key: l => l.contact_email },
+        { header: 'Email Verification Status', key: l => getEmailVerificationStatus(l) === 'not verified' ? '' : getEmailVerificationStatus(l) },
+        { header: 'Email Verification Confidence', key: l => l.verification_confidence || '' },
+        { header: 'Email Verification Message', key: l => l.verification_message || '' },
+        { header: 'Email Provider', key: l => l.email_provider_type || '' },
+        { header: 'Email Catch All', key: l => l.email_catch_all === true ? 'yes' : (l.email_catch_all === false ? 'no' : '') },
+        { header: 'Role Email', key: l => l.email_is_role === true ? 'yes' : (l.email_is_role === false ? 'no' : '') },
+        { header: 'Phone', key: l => l.contact_phone },
+        { header: 'Alternate Phones', key: l => Array.isArray(l.alternate_phones) ? l.alternate_phones.join(' | ') : (l.alternate_phones || '') },
+        { header: 'Phone Confidence', key: l => l.phone_confidence || '' },
+        { header: 'Phone Source', key: l => l.phone_source || '' },
+        { header: 'Phone Status', key: l => l.phone_validation_status || '' },
+        { header: 'Website', key: l => l.company_website },
+        { header: 'City', key: l => l.city },
+        { header: 'State', key: l => l.state },
+        { header: 'Zip Code', key: l => l.zip_code },
+        { header: 'Status', key: l => l.status || 'New' },
+        { header: 'Notes', key: l => l.notes || l.lead_summary || l.value_proposition },
+      ];
+      const escapeCsv = value => `"${String(value || '').replace(/"/g, '""')}"`;
+      const csvLines = [
+        cols.map(column => column.header).join(','),
+        ...contactLeads.map(lead => cols.map(column => escapeCsv(column.key(lead))).join(',')),
+      ];
+      downloadBlob(
+        new Blob(['\ufeff', csvLines.join('\n')], { type: 'text/csv;charset=utf-8' }),
+        `contact_leads_${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+      const excludedCount = state.leads.length - contactLeads.length;
+      addLog(`Contact Export created with ${contactLeads.length} complete leads; ${excludedCount} incomplete leads were excluded.`, 'success');
     });
 
     document.getElementById('export-json-btn').addEventListener('click', () => {

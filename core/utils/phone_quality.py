@@ -97,6 +97,61 @@ def _phone_type_label(number: Any) -> str:
     return labels.get(phone_type, "unknown")
 
 
+def _fallback_phone_candidate(
+    raw_text: str,
+    *,
+    source_type: str,
+    source_url: str,
+    context: str,
+    source_kind: str,
+    region: str,
+) -> Dict[str, Any] | None:
+    digits = _digits(raw_text)
+    if not digits:
+        return None
+
+    national_digits = digits
+    country_code = ""
+    if len(digits) == 11 and digits.startswith("1"):
+        country_code = "1"
+        national_digits = digits[1:]
+    elif len(digits) == 10 and (region or "").upper() in {"US", "CA"}:
+        country_code = "1"
+    elif 10 <= len(digits) <= 15:
+        country_code = digits[: len(digits) - 10]
+        national_digits = digits[-10:]
+    else:
+        return None
+
+    if len(national_digits) != 10:
+        return None
+    if national_digits[0] in {"0", "1"} or national_digits[3] in {"0", "1"}:
+        return None
+
+    display = f"({national_digits[:3]}) {national_digits[3:6]}-{national_digits[6:]}"
+    e164 = f"+{country_code or '1'}{national_digits}"
+    source_score = SOURCE_WEIGHTS.get(source_type, SOURCE_WEIGHTS["text"])
+    if source_kind == "tel_link":
+        source_score += 12
+    lowered_context = (context or "").lower()
+    if any(word in lowered_context for word in POSITIVE_CONTEXT_WORDS):
+        source_score += 6
+    confidence = max(0, min(source_score + 2, 88))
+    return {
+        "raw": raw_text,
+        "display": display,
+        "e164": e164,
+        "digits": _digits(e164),
+        "source": source_type,
+        "source_kind": source_kind,
+        "source_url": source_url,
+        "validation_status": "possible",
+        "phone_type": "unknown",
+        "confidence": confidence,
+        "context": re.sub(r"\s+", " ", context or "").strip()[:180],
+    }
+
+
 def _context_window(text: str, start: int, end: int, size: int = 60) -> str:
     return (text or "")[max(0, start - size) : min(len(text or ""), end + size)]
 
@@ -115,7 +170,14 @@ def normalize_phone_candidate(
         return None
 
     if not phonenumbers:
-        return None
+        return _fallback_phone_candidate(
+            raw_text,
+            source_type=source_type,
+            source_url=source_url,
+            context=context,
+            source_kind=source_kind,
+            region=region,
+        )
 
     try:
         parsed = phonenumbers.parse(raw_text, region)

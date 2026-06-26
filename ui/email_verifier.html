@@ -411,7 +411,7 @@
         columnHeader.placeholder = 'Auto-detect, or enter Phone / Mobile / Contact Phone';
         verifyBtn.textContent = 'Validate Phones';
         validLabel.textContent = 'Valid';
-        modeNote.innerHTML = 'For best results, use a sheet with a clear phone column like <strong>Phone</strong>, <strong>Mobile</strong>, or <strong>Contact Phone</strong>. The output adds <strong>phone_verification_status</strong>.';
+        modeNote.innerHTML = 'For best results, use a sheet with a clear phone column like <strong>Phone</strong>, <strong>Mobile</strong>, or <strong>Contact Phone</strong> and a website column like <strong>Website</strong> or <strong>Company Website</strong>. The downloaded Excel normalizes the phone column, adds <strong>phone_verification_status</strong>, and checks whether the number appears on the company website.';
       } else {
         columnLabel.textContent = 'Email column header';
         columnHeader.placeholder = 'Auto-detect, or enter Email / Contact Email';
@@ -495,10 +495,10 @@
       setLog([
         `Uploading ${file.name}.`,
         mode === 'phone'
-          ? 'Reading only the selected phone column and validating phone formats.'
+          ? 'Reading the selected phone column, normalizing accepted numbers, and checking same-row company websites for phone matches.'
           : 'Reading only the selected email column and running DNS, MX, SMTP, catch-all, and recipient checks.',
         mode === 'phone'
-          ? 'Phone validation is format/region based; ownership is not telecom-verified.'
+          ? 'Normal scraping runs first; Tavily is used only if no phone is found on the website pages.'
           : 'This can take time for 100 emails because real mail servers are being contacted.'
       ]);
 

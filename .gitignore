@@ -41,6 +41,18 @@ verified_*.xlsx
 leads_*.csv
 lead_run_*.json
 
+# Generated local reports / presentation exports
+Lead Generation Final Report.pdf
+Lead Generation Final Report.html
+lead_generation_workflow*.pdf
+lead_generation_workflow*.html
+email_verification_*.pdf
+email_verification_*.html
+apollo_*.pdf
+apollo_*.html
+hunter_*.pdf
+hunter_*.html
+
 # OS
 .DS_Store
 Thumbs.db

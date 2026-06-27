@@ -63,7 +63,19 @@ _VELIT_KEYWORDS = (
 )
 
 
-def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int = 12) -> List[str]:
+_STATE_CITY_EXPANSIONS = {
+    "alaska": ["Anchorage", "Fairbanks", "Wasilla", "Palmer", "Juneau", "Kenai"],
+    "ak": ["Anchorage", "Fairbanks", "Wasilla", "Palmer", "Juneau", "Kenai"],
+    "new york": ["New York", "Brooklyn", "Long Island", "Albany", "Buffalo", "Rochester"],
+    "ny": ["New York", "Brooklyn", "Long Island", "Albany", "Buffalo", "Rochester"],
+    "new jersey": ["Newark", "Jersey City", "Trenton", "Edison", "Paterson", "Cherry Hill"],
+    "nj": ["Newark", "Jersey City", "Trenton", "Edison", "Paterson", "Cherry Hill"],
+    "connecticut": ["Hartford", "New Haven", "Stamford", "Bridgeport", "Waterbury", "Norwalk"],
+    "ct": ["Hartford", "New Haven", "Stamford", "Bridgeport", "Waterbury", "Norwalk"],
+}
+
+
+def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int = 16) -> List[str]:
     cleaned_location = " ".join((location or "").split()).strip()
     cleaned_seed = " ".join((seed_query or "").split()).strip()
     if not cleaned_location:
@@ -83,6 +95,26 @@ def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int
         f'"van builder" near "{cleaned_location}"',
         f'"campervan conversion" near "{cleaned_location}"',
     ]
+    expanded_locations = _STATE_CITY_EXPANSIONS.get(cleaned_location.lower(), [])
+    for city in expanded_locations:
+        base_queries.extend(
+            [
+                f'"van upfitter" "{city}" official website',
+                f'"van conversion" "{city}" contact',
+                f'"camper van builder" "{city}" website',
+            ]
+        )
+    if cleaned_location.lower() in {"alaska", "ak"}:
+        base_queries.extend(
+            [
+                '"camper van conversion" "ships to Alaska"',
+                '"van conversion" "serves Alaska"',
+                '"sprinter van conversion" "Alaska delivery"',
+                '"adventure van" "Alaska" "contact"',
+                '"van upfitter" "Anchorage" phone email',
+                '"camper van rental" "Alaska" "conversion"',
+            ]
+        )
     if cleaned_seed:
         base_queries.insert(0, f'"{cleaned_seed}" "{cleaned_location}" official website')
 

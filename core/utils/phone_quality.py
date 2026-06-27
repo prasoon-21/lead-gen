@@ -21,6 +21,19 @@ PHONE_TEXT_PATTERN = re.compile(
 )
 TEL_LINK_PATTERN = re.compile(r"href=[\"']tel:([^\"']+)[\"']", re.IGNORECASE)
 EMPTY_PHONE_VALUES = {"", "-", "--", "n/a", "na", "none", "null", "not found"}
+INVALID_NANP_AREA_CODES = {
+    "000",
+    "111",
+    "123",
+    "157",
+    "222",
+    "333",
+    "444",
+    "555",
+    "577",
+    "588",
+    "679",
+}
 
 SOURCE_WEIGHTS = {
     "contact_page": 86,
@@ -72,6 +85,14 @@ def _looks_bad_before_parse(raw: str, context: str = "") -> bool:
         return True
     if digits[-10:] in {"1234567890", "0123456789", "9876543210"}:
         return True
+    national_digits = digits[1:] if len(digits) == 11 and digits.startswith("1") else digits[-10:]
+    if len(national_digits) == 10:
+        area_code = national_digits[:3]
+        exchange = national_digits[3:6]
+        if area_code in INVALID_NANP_AREA_CODES or area_code[0] in {"0", "1"}:
+            return True
+        if exchange[0] in {"0", "1"}:
+            return True
     if re.fullmatch(r"\d{4}[-/.]\d{2}[-/.]\d{2}", cleaned):
         return True
     lowered_context = (context or "").lower()
@@ -126,6 +147,8 @@ def _fallback_phone_candidate(
     if len(national_digits) != 10:
         return None
     if national_digits[0] in {"0", "1"} or national_digits[3] in {"0", "1"}:
+        return None
+    if national_digits[:3] in INVALID_NANP_AREA_CODES:
         return None
 
     display = f"({national_digits[:3]}) {national_digits[3:6]}-{national_digits[6:]}"

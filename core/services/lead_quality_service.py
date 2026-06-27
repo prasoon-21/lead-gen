@@ -103,7 +103,8 @@ def _acceptance_explanation(
     if notes:
         readable_notes = [note.replace("_", " ") for note in notes[:3]]
         note_text = f" Extra signals: {', '.join(readable_notes)}."
-    return f"Accepted as {quality_status.lower()} because {company} has {signal_text}. Quality score: {score}/100.{note_text}"
+    display_score = max(0, min(int(score or 0), 100))
+    return f"Accepted as {quality_status.lower()} because {company} has {signal_text}. Quality score: {display_score}/100.{note_text}"
 
 
 def _field_source_map(lead: Dict[str, Any]) -> Dict[str, str]:

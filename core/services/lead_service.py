@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Set
 from urllib.parse import urlparse
 
 from core.services.lead_quality_service import rank_and_enrich_leads
+from core.services.lead_quality_gate import apply_quality_gate
 from core.services.todo_sheet_store import TodoSheetStore
 
 
@@ -86,14 +87,9 @@ class LeadService:
             "email": cls._email_key(lead),
             "linkedin": cls._linkedin_key(lead),
             "person_company": cls._person_company_key(lead),
+            "company": cls._company_key(lead),
+            "domain": cls._domain_key(lead),
         }
-
-        # Only use coarse company/domain dedup for company-level fallback leads.
-        # Person-level leads should be allowed to coexist at the same company
-        # as long as they represent different people/identities.
-        if not cls._is_person_level_lead(lead):
-            keys["company"] = cls._company_key(lead)
-            keys["domain"] = cls._domain_key(lead)
 
         return keys
 
@@ -197,7 +193,8 @@ class LeadService:
         for row in existing_rows:
             self._register_keys(existing_registry, row)
 
-        ranked_leads, quality_stats = rank_and_enrich_leads(leads)
+        gated_leads, gate_stats = apply_quality_gate(leads, drop_rejected=True)
+        ranked_leads, quality_stats = rank_and_enrich_leads(gated_leads)
         batch_registry = self._empty_key_registry()
 
         added_count = 0
@@ -226,7 +223,7 @@ class LeadService:
             "duplicates_skipped": duplicate_count,
             "duplicate_reasons": duplicate_reasons,
             "total_processed": len(leads),
-            "quality": quality_stats,
+            "quality": {**quality_stats, "quality_gate": gate_stats},
             "report": self.summarize_leads(ranked_leads),
             "export_report": self.summarize_leads(exported_leads),
             "exported_preview": exported_leads[:5],

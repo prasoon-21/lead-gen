@@ -599,6 +599,11 @@ class TodoSheetStore:
             "phone_source": str(lead.get("phone_source", "")).strip(),
             "phone_validation_status": str(lead.get("phone_validation_status", "")).strip(),
             "phone_type": str(lead.get("phone_type", "")).strip(),
+            "target_domain": str(lead.get("target_domain", "")).strip(),
+            "pipeline_disposition": str(lead.get("pipeline_disposition", "")).strip(),
+            "rejection_reason_code": str(lead.get("rejection_reason_code", "")).strip(),
+            "contacts": lead.get("contacts", []) or [],
+            "alternative_contacts": lead.get("alternative_contacts", {}) or {},
         }
 
         # Build citation summary

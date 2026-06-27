@@ -559,9 +559,9 @@
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
             Bulk Import
           </a>
-          <button id="export-csv-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
+          <button id="export-csv-btn" title="Export all leads as an Excel-compatible CSV with the final CRM headers" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Export CSV
+            Export Excel
           </button>
           <button id="contact-export-btn" title="Export only leads containing an email, phone number, and company website" class="px-4 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-[11px] font-bold hover:bg-green-500/20 transition-all flex items-center gap-1.5 text-green-300">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5 2a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
@@ -2704,6 +2704,8 @@
       lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
       lead.status = find(['status']) || 'New';
       lead.notes = find(['notes', 'comments', 'remarks']) || lead.lead_summary || lead.value_proposition || '';
+      lead.address = find(['address', 'street address', 'business address']) || '';
+      lead.tags = find(['tags', 'tag']) || '';
       return lead;
     }
 
@@ -2716,8 +2718,202 @@
       URL.revokeObjectURL(a.href);
     }
 
+    const US_STATE_NAMES = new Set([
+      'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware',
+      'florida', 'georgia', 'hawaii', 'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky',
+      'louisiana', 'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi',
+      'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey', 'new mexico',
+      'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon', 'pennsylvania',
+      'rhode island', 'south carolina', 'south dakota', 'tennessee', 'texas', 'utah', 'vermont',
+      'virginia', 'washington', 'west virginia', 'wisconsin', 'wyoming', 'usa', 'united states',
+    ]);
+    const US_STATE_CODES = new Set([
+      'al', 'ak', 'az', 'ar', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'id', 'il', 'in', 'ia',
+      'ks', 'ky', 'la', 'me', 'md', 'ma', 'mi', 'mn', 'ms', 'mo', 'mt', 'ne', 'nv', 'nh', 'nj',
+      'nm', 'ny', 'nc', 'nd', 'oh', 'ok', 'or', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'vt',
+      'va', 'wa', 'wv', 'wi', 'wy', 'dc',
+    ]);
+    const BUSINESS_TYPE_RULES = [
+      { tag: 'truck body', patterns: ['truck body', 'service body', 'utility body', 'dump body', 'flatbed body', 'truck bodies'] },
+      { tag: 'fleet / work truck', patterns: ['fleet', 'work truck', 'work trucks', 'fleet vehicle', 'fleet vehicles'] },
+      { tag: 'van conversion', patterns: ['van conversion', 'van conversions', 'camper van', 'campervan', 'sprinter conversion', 'conversion van', 'rv conversion', 'overland van', 'adventure van'] },
+      { tag: 'upfitter', patterns: ['upfitter', 'upfitters', 'upfit', 'upfitting', 'vehicle upfit', 'van upfit'] },
+      { tag: 'commercial vehicle', patterns: ['commercial vehicle', 'commercial vehicles', 'commercial van', 'cargo van', 'commercial truck'] },
+    ];
+
+    function cleanExportValue(value) {
+      if (Array.isArray(value)) return value.map(cleanExportValue).filter(Boolean).join(' | ');
+      if (value && typeof value === 'object') return JSON.stringify(value);
+      const text = String(value ?? '').trim();
+      if (!text || ['—', 'â€”', '-', '--', 'n/a', 'na', 'none', 'null', 'not found'].includes(text.toLowerCase())) return '';
+      return text;
+    }
+
+    function firstExportValue(...values) {
+      for (const value of values) {
+        const cleaned = cleanExportValue(value);
+        if (cleaned) return cleaned;
+      }
+      return '';
+    }
+
+    function normalizeTagPart(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9/ -]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function cleanCityForTag(value) {
+      const city = normalizeTagPart(value).replace(/\b(city of|city)\b/g, '').trim();
+      if (!city || city.length < 2 || city.length > 45) return '';
+      if (/\d|@|www|https?/.test(city)) return '';
+      if (US_STATE_NAMES.has(city) || US_STATE_CODES.has(city)) return '';
+      if (['location', 'address', 'unknown', 'home', 'homepage'].includes(city)) return '';
+      if (/(upfitter|conversion|commercial|vehicle|fleet|truck|van|rv|builder|dealer|service)/i.test(city)) return '';
+      return city;
+    }
+
+    function inferCityTag(lead) {
+      const directCity = cleanCityForTag(lead.city);
+      if (directCity) return directCity;
+      const location = firstExportValue(lead.location, lead.address);
+      if (location) {
+        const cityFromLocation = location.split(',').map(part => cleanCityForTag(part)).find(Boolean);
+        if (cityFromLocation) return cityFromLocation;
+      }
+      const searchable = [
+        lead.notes, lead.address, lead.location, lead.lead_summary,
+        lead.value_proposition, lead.company_name, lead.company_website,
+      ].map(cleanExportValue).filter(Boolean).join(' ');
+      const statePattern = '(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Nevada|New Jersey|New Mexico|New York|North Carolina|Ohio|Oklahoma|Oregon|Pennsylvania|Tennessee|Texas|Utah|Virginia|Washington|Wisconsin)';
+      const commaMatch = searchable.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,40})\\s*,\\s*' + statePattern + '\\b'));
+      const commaCity = commaMatch ? cleanCityForTag(commaMatch[1]) : '';
+      if (commaCity) return commaCity;
+      const phraseMatch = searchable.match(new RegExp('\\b(?:in|near|around|serving|based in|located in)\\s+([A-Z][A-Za-z .-]{1,40})(?:,|\\s+' + statePattern + '\\b)'));
+      const phraseCity = phraseMatch ? cleanCityForTag(phraseMatch[1]) : '';
+      return phraseCity || 'unknown-city';
+    }
+
+    function inferBusinessTypeTag(lead) {
+      const searchable = [
+        lead.industry, lead.specialty, lead.notes, lead.lead_summary,
+        lead.value_proposition, lead.company_name, lead.company_website,
+      ].map(cleanExportValue).join(' ').toLowerCase();
+      for (const rule of BUSINESS_TYPE_RULES) {
+        if (rule.patterns.some(pattern => searchable.includes(pattern))) return rule.tag;
+      }
+      return 'unknown-business-type';
+    }
+
+    function buildTagsForExport(lead) {
+      const existingTags = firstExportValue(lead.tags, lead.Tags, lead.tag);
+      const existingTagParts = String(existingTags || '').split(',').map(part => normalizeTagPart(part)).filter(Boolean);
+      const existingLooksValid =
+        existingTagParts.length === 2
+        && !/(https?|www|instagram|facebook|linkedin|youtube)\b/i.test(existingTags)
+        && cleanCityForTag(existingTagParts[0])
+        && existingTagParts[1] !== 'unknown-business-type'
+        && BUSINESS_TYPE_RULES.some(rule => rule.tag === existingTagParts[1]);
+      if (existingLooksValid) return `${cleanCityForTag(existingTagParts[0])}, ${existingTagParts[1]}`;
+      return `${inferCityTag(lead)}, ${inferBusinessTypeTag(lead)}`;
+    }
+
+    function updateTagSummary(summary, tagValue) {
+      const parts = String(tagValue || '').split(',').map(part => normalizeTagPart(part)).filter(Boolean);
+      const cityTag = parts[0] || 'unknown-city';
+      const businessTag = parts[1] || 'unknown-business-type';
+      if (cityTag === 'unknown-city') summary.unknownCity += 1;
+      else summary.cityFound += 1;
+      summary.businessTypeCounts[businessTag] = (summary.businessTypeCounts[businessTag] || 0) + 1;
+    }
+
+    function readableHeaderFromKey(key) {
+      return String(key || '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase())
+        .replace(/\bUrl\b/g, 'URL')
+        .replace(/\bId\b/g, 'ID');
+    }
+
+    function buildCrmExportColumns(leads) {
+      const columns = [
+        { header: 'Name (Required)', value: l => firstExportValue(l.contact_person_name, l.founder_name, l.company_name), keys: ['contact_person_name', 'founder_name'] },
+        { header: 'Email (Required)', value: l => firstExportValue(isPlaceholderEmail(l.contact_email) ? '' : l.contact_email), keys: ['contact_email'] },
+        { header: 'Company Name', value: l => firstExportValue(l.company_name), keys: ['company_name'] },
+        { header: 'Designation', value: l => firstExportValue(l.contact_person_title, l.designation, l.role), keys: ['contact_person_title', 'designation', 'role'] },
+        { header: 'Phone', value: l => firstExportValue(l.contact_phone), keys: ['contact_phone'] },
+        { header: 'Industry', value: l => firstExportValue(l.industry, l.specialty), keys: ['industry', 'specialty'] },
+        { header: 'Notes', value: l => firstExportValue(l.notes, l.lead_summary, l.value_proposition), keys: ['notes', 'lead_summary', 'value_proposition'] },
+        { header: 'Tags', value: l => buildTagsForExport(l), keys: ['tags', 'tag'] },
+        { header: 'Contact Type', value: () => 'potential customer', keys: [] },
+        { header: 'Email Status', value: l => firstExportValue(l.email_status, getEmailVerificationStatus(l)), keys: ['email_status', 'verification_status'] },
+        { header: 'Website', value: l => firstExportValue(l.company_website), keys: ['company_website'] },
+        { header: 'Person LinkedIn', value: l => firstExportValue(l.linkedin_url), keys: ['linkedin_url'] },
+        { header: 'Company LinkedIn', value: l => firstExportValue(l.company_linkedin_url), keys: ['company_linkedin_url'] },
+        { header: 'Lead Summary', value: l => firstExportValue(l.lead_summary || buildLeadSummary(l)), keys: ['lead_summary'] },
+        { header: 'Why Accepted', value: l => firstExportValue(l.acceptance_reason || l.confidence_explanation), keys: ['acceptance_reason', 'confidence_explanation'] },
+        { header: 'Alternate Phones', value: l => Array.isArray(l.alternate_phones) ? l.alternate_phones.join(' | ') : firstExportValue(l.alternate_phones), keys: ['alternate_phones'] },
+        { header: 'Phone Confidence', value: l => firstExportValue(l.phone_confidence), keys: ['phone_confidence'] },
+        { header: 'Phone Source', value: l => firstExportValue(l.phone_source), keys: ['phone_source'] },
+        { header: 'Phone Status', value: l => firstExportValue(l.phone_validation_status), keys: ['phone_validation_status'] },
+        { header: 'City', value: l => firstExportValue(l.city), keys: ['city'] },
+        { header: 'State', value: l => firstExportValue(l.state), keys: ['state'] },
+        { header: 'Zip Code', value: l => firstExportValue(l.zip_code), keys: ['zip_code'] },
+        { header: 'Status', value: l => firstExportValue(l.status || 'New'), keys: ['status'] },
+      ];
+      const usedKeys = new Set(['email_verification', 'verification_checks', 'field_sources', 'source_details']);
+      columns.forEach(column => (column.keys || []).forEach(key => usedKeys.add(key)));
+      const usedHeaders = new Set(columns.map(column => column.header.toLowerCase()));
+      const dynamicKeys = [];
+      leads.forEach(lead => {
+        Object.keys(lead || {}).forEach(key => {
+          if (usedKeys.has(key)) return;
+          const header = readableHeaderFromKey(key);
+          if (usedHeaders.has(header.toLowerCase())) return;
+          if (!leads.some(item => cleanExportValue(item[key]))) return;
+          usedKeys.add(key);
+          usedHeaders.add(header.toLowerCase());
+          dynamicKeys.push(key);
+        });
+      });
+      dynamicKeys.sort().forEach(key => {
+        columns.push({ header: readableHeaderFromKey(key), value: lead => cleanExportValue(lead[key]), keys: [key] });
+      });
+      return columns;
+    }
+
+    function exportLeadsAsCrmCsv(leads, filename, logPrefix = 'Exported') {
+      const columns = buildCrmExportColumns(leads);
+      const summary = { totalRows: leads.length, cityFound: 0, unknownCity: 0, businessTypeCounts: {} };
+      const escapeCsv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = leads.map(lead => {
+        const tags = buildTagsForExport(lead);
+        updateTagSummary(summary, tags);
+        return columns.map(column => escapeCsv(column.header === 'Tags' ? tags : column.value(lead))).join(',');
+      });
+      downloadBlob(
+        new Blob(['\ufeff', [columns.map(column => escapeCsv(column.header)).join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' }),
+        filename,
+      );
+      const businessCounts = Object.entries(summary.businessTypeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([tag, count]) => `${tag}: ${count}`)
+        .join(', ');
+      addLog(
+        `${logPrefix} ${summary.totalRows} leads as CRM CSV.<br>` +
+        `Rows with city found: ${summary.cityFound}; unknown city: ${summary.unknownCity}.<br>` +
+        `Business type tag counts: ${businessCounts || 'none'}.`,
+        'success',
+      );
+    }
+
     document.getElementById('export-csv-btn').addEventListener('click', () => {
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
+      exportLeadsAsCrmCsv(state.leads, `leads_${new Date().toISOString().slice(0,10)}.csv`);
+      return;
       // Export order keeps the person/contact fields together for Excel review.
       const cols = [
         { header: 'Company Name', key: l => l.company_name },
@@ -2780,6 +2976,14 @@
         addLog('Contact Export found no leads containing all three required fields: email, phone, and website.', 'error');
         return;
       }
+
+      const excludedContactCount = state.leads.length - contactLeads.length;
+      exportLeadsAsCrmCsv(
+        contactLeads,
+        `contact_leads_${new Date().toISOString().slice(0, 10)}.csv`,
+        `Contact Export created with ${contactLeads.length} complete leads; ${excludedContactCount} incomplete leads were excluded. Exported`,
+      );
+      return;
 
       const cols = [
         { header: 'Company Name', key: l => l.company_name },

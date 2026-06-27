@@ -21,6 +21,7 @@ from core.services.lead_discovery_policy import (
     filter_whitelisted_directory_results,
 )
 from core.services.lead_quality_service import score_lead
+from core.services.lead_quality_gate import apply_quality_gate
 from core.tools.base import ToolContext
 from core.tools.external.linkedin_research import LinkedInResearchTool
 from core.tools.external.tavily_client import TavilyClient
@@ -179,6 +180,7 @@ class ProductionLeadPipeline:
                 industry=industry,
                 location=location,
             )
+            leads, quality_gate_stats = apply_quality_gate(leads, drop_rejected=True)
             phase_steps.append(
                 {
                     "step": 4,
@@ -203,6 +205,7 @@ class ProductionLeadPipeline:
                     "corporate_targets": len(corporate_targets),
                     "verified_targets": len(verified),
                     "scored_targets": len(leads),
+                    "quality_gate": quality_gate_stats,
                     "linkedin_enriched_targets": sum(
                         1 for lead in leads if lead.get("contact_person_name") or lead.get("founder_name")
                     ),
@@ -701,6 +704,7 @@ class ProductionLeadPipeline:
             "company_website": url,
             "industry": industry or "General",
             "location": location or "",
+            "location_evidence": self._location_evidence_excerpt(text=f"{title}\n{text}", location=location),
             "value_proposition": summary,
             "lead_summary": "",
             "company_size": "",
@@ -1131,6 +1135,7 @@ class ProductionLeadPipeline:
                 "campervans",
                 "campers",
                 "camper",
+                "quest",
                 "vans",
                 "van",
                 "motors",
@@ -1140,13 +1145,17 @@ class ProductionLeadPipeline:
                 "coaches",
                 "designs",
                 "design",
+                "customs",
                 "custom",
                 "adventure",
                 "offroad",
+                "coast",
+                "life",
                 "solutions",
                 "systems",
                 "homes",
                 "rv",
+                "ak",
             )
             remaining = label
             suffixes: List[str] = []
@@ -1165,7 +1174,7 @@ class ProductionLeadPipeline:
                 remaining = remaining[: -len(suffix)]
             label = " ".join(([remaining] if remaining else []) + suffixes)
         tokens = [token for token in re.split(r"\s+", label) if token]
-        acronym_tokens = {"abc", "rv", "usa", "us", "4x4"}
+        acronym_tokens = {"abc", "rv", "usa", "us", "ak", "4x4"}
         pretty_tokens = [token.upper() if token.lower() in acronym_tokens else token.capitalize() for token in tokens]
         return " ".join(pretty_tokens) if pretty_tokens else "Unknown Company"
 
@@ -1382,6 +1391,10 @@ class ProductionLeadPipeline:
             extension = domain.rsplit(".", 1)[-1] if "." in domain else ""
             if not local or not domain or extension in asset_extensions:
                 continue
+            if domain in {"domain.com", "example.com", "example.net", "example.org", "email.com"}:
+                continue
+            if local in {"user", "username", "name", "yourname", "test"} and domain in {"domain.com", "yourdomain.com"}:
+                continue
             if re.search(r"(?:^|[-_.])(?:logo|icon|sprite|image)(?:[-_.]|$)", local, re.IGNORECASE):
                 continue
             if email not in seen:
@@ -1441,6 +1454,24 @@ class ProductionLeadPipeline:
             lead["phone_candidates"] = summary.get("phone_candidates", [])
         lead["alternate_phones"] = alternates[:4]
         return lead
+
+    @staticmethod
+    def _location_evidence_excerpt(*, text: str, location: str, max_length: int = 800) -> str:
+        haystack = re.sub(r"\s+", " ", str(text or "")).strip()
+        needle = re.sub(r"\s+", " ", str(location or "")).strip()
+        if not haystack or not needle:
+            return ""
+        lowered = haystack.lower()
+        terms = {needle.lower()}
+        if needle.lower() == "alaska":
+            terms.update({"ak", "anchorage", "fairbanks", "wasilla", "palmer", "juneau", "kenai", "ships to alaska", "serves alaska", "alaska delivery"})
+        for term in terms:
+            index = lowered.find(term)
+            if index >= 0:
+                start = max(0, index - 220)
+                end = min(len(haystack), index + len(term) + 420)
+                return haystack[start:end][:max_length]
+        return ""
 
     @staticmethod
     def _first_linkedin_url(text: str) -> str:

@@ -17,12 +17,9 @@ TRUSTED_DIRECTORY_DOMAINS = (
 )
 
 _QUERY_TEMPLATES = (
-    'site:clutch.co/it-services "{industry}" "{location}"',
-    'site:clutch.co/agencies "{industry}" "{location}"',
-    'site:glassdoor.co.in "{industry}" "{location}"',
-    'site:chamberofcommerce.com "{industry}" "{location}" "find a business"',
-    'site:chamberofcommerce.com "{industry}" "{location}" "member directory"',
-    'site:bbb.org "{industry}" "{location}"',
+    '"{industry}" companies in "{location}" -directory -blog -jobs -yelp -glassdoor',
+    '"{industry}" "{location}" "contact us" "email" OR "phone"',
+    '"{industry}" "{location}" official website -directory -blog -news -jobs',
 )
 
 _GOOD_DIRECTORY_PATH_MARKERS = (
@@ -100,7 +97,7 @@ def build_targeted_directory_queries(
     industry: str,
     location: str,
     seed_query: str = "",
-    max_queries: int = 6,
+    max_queries: int = 3,
 ) -> List[str]:
     cleaned_industry = " ".join((industry or "").split()).strip()
     cleaned_location = " ".join((location or "").split()).strip()
@@ -115,13 +112,9 @@ def build_targeted_directory_queries(
     if cleaned_industry and cleaned_location:
         for template in _QUERY_TEMPLATES:
             add(template.format(industry=cleaned_industry, location=cleaned_location))
-        for query in _dynamic_chamber_queries(cleaned_industry, cleaned_location):
-            add(query)
 
     if cleaned_seed and cleaned_location:
-        add(f'site:clutch.co "{cleaned_seed}" "{cleaned_location}"')
-    elif cleaned_seed and cleaned_industry:
-        add(f'site:glassdoor.co.in "{cleaned_seed}" "{cleaned_industry}"')
+        add(f'"{cleaned_seed}" "{cleaned_location}" official website -directory')
 
     return queries[:max_queries]
 

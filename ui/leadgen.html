@@ -6,6 +6,7 @@
   <title>Agentic Core — B2B Lead Generator</title>
   <meta name="description" content="AI-powered B2B lead generation. Search the web, scrape companies, and view structured results instantly." />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -559,13 +560,13 @@
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
             Bulk Import
           </a>
-          <button id="export-csv-btn" title="Export all leads as an Excel-compatible CSV with the final CRM headers" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
+          <button id="export-xlsx-btn" title="Export all leads as a real .xlsx Excel workbook with the final CRM headers" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Export Excel
+            Export .XLSX
           </button>
-          <button id="contact-export-btn" title="Export only leads containing an email, phone number, and company website" class="px-4 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-[11px] font-bold hover:bg-green-500/20 transition-all flex items-center gap-1.5 text-green-300">
+          <button id="contact-export-btn" title="Export only leads containing an email, phone number, and company website as a real .xlsx Excel workbook" class="px-4 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-[11px] font-bold hover:bg-green-500/20 transition-all flex items-center gap-1.5 text-green-300">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5 2a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
-            Contact Export
+            Contact .XLSX
           </button>
           <button id="export-json-btn" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -2885,69 +2886,56 @@
       return columns;
     }
 
-    function exportLeadsAsCrmCsv(leads, filename, logPrefix = 'Exported') {
+    function ensureXlsxExportAvailable() {
+      if (window.XLSX) return true;
+      addLog('Excel export library is not loaded yet. Please refresh the page and try again.', 'error');
+      return false;
+    }
+
+    function buildWorkbookFromRows(sheetName, headers, rows) {
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      worksheet['!cols'] = headers.map((header, index) => {
+        const maxCellLength = rows.reduce((max, row) => Math.max(max, String(row[index] ?? '').length), String(header).length);
+        return { wch: Math.max(12, Math.min(maxCellLength + 2, 48)) };
+      });
+      worksheet['!autofilter'] = {
+        ref: XLSX.utils.encode_range({
+          s: { r: 0, c: 0 },
+          e: { r: Math.max(rows.length, 1), c: Math.max(headers.length - 1, 0) },
+        }),
+      };
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      return workbook;
+    }
+
+    function exportLeadsAsCrmXlsx(leads, filename, logPrefix = 'Exported') {
+      if (!ensureXlsxExportAvailable()) return;
       const columns = buildCrmExportColumns(leads);
       const summary = { totalRows: leads.length, cityFound: 0, unknownCity: 0, businessTypeCounts: {} };
-      const escapeCsv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const headers = columns.map(column => column.header);
       const rows = leads.map(lead => {
         const tags = buildTagsForExport(lead);
         updateTagSummary(summary, tags);
-        return columns.map(column => escapeCsv(column.header === 'Tags' ? tags : column.value(lead))).join(',');
+        return columns.map(column => cleanExportValue(column.header === 'Tags' ? tags : column.value(lead)));
       });
-      downloadBlob(
-        new Blob(['\ufeff', [columns.map(column => escapeCsv(column.header)).join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' }),
-        filename,
-      );
+      const workbook = buildWorkbookFromRows('Leads', headers, rows);
+      XLSX.writeFile(workbook, filename, { compression: true });
       const businessCounts = Object.entries(summary.businessTypeCounts)
         .sort((a, b) => b[1] - a[1])
         .map(([tag, count]) => `${tag}: ${count}`)
         .join(', ');
       addLog(
-        `${logPrefix} ${summary.totalRows} leads as CRM CSV.<br>` +
+        `${logPrefix} ${summary.totalRows} leads as Excel .xlsx.<br>` +
         `Rows with city found: ${summary.cityFound}; unknown city: ${summary.unknownCity}.<br>` +
         `Business type tag counts: ${businessCounts || 'none'}.`,
         'success',
       );
     }
 
-    document.getElementById('export-csv-btn').addEventListener('click', () => {
+    document.getElementById('export-xlsx-btn').addEventListener('click', () => {
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
-      exportLeadsAsCrmCsv(state.leads, `leads_${new Date().toISOString().slice(0,10)}.csv`);
-      return;
-      // Export order keeps the person/contact fields together for Excel review.
-      const cols = [
-        { header: 'Company Name', key: l => l.company_name },
-        { header: 'Specialty',    key: l => l.specialty || l.industry },
-        { header: 'Lead Summary', key: l => l.lead_summary || buildLeadSummary(l) },
-        { header: 'Why Accepted', key: l => l.acceptance_reason || l.confidence_explanation || '' },
-        { header: 'Contact Name', key: l => l.contact_person_name || l.founder_name },
-        { header: 'Person LinkedIn', key: l => l.linkedin_url },
-        { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
-        { header: 'Email',        key: l => l.contact_email },
-        { header: 'Email Verification Status', key: l => getEmailVerificationStatus(l) === 'not verified' ? '' : getEmailVerificationStatus(l) },
-        { header: 'Email Verification Confidence', key: l => l.verification_confidence || '' },
-        { header: 'Email Verification Message', key: l => l.verification_message || '' },
-        { header: 'Email Provider', key: l => l.email_provider_type || '' },
-        { header: 'Email Catch All', key: l => l.email_catch_all === true ? 'yes' : (l.email_catch_all === false ? 'no' : '') },
-        { header: 'Role Email', key: l => l.email_is_role === true ? 'yes' : (l.email_is_role === false ? 'no' : '') },
-        { header: 'Phone',        key: l => l.contact_phone },
-        { header: 'Alternate Phones', key: l => Array.isArray(l.alternate_phones) ? l.alternate_phones.join(' | ') : (l.alternate_phones || '') },
-        { header: 'Phone Confidence', key: l => l.phone_confidence || '' },
-        { header: 'Phone Source', key: l => l.phone_source || '' },
-        { header: 'Phone Status', key: l => l.phone_validation_status || '' },
-        { header: 'Website',      key: l => l.company_website },
-        { header: 'City',         key: l => l.city },
-        { header: 'State',        key: l => l.state },
-        { header: 'Zip Code',     key: l => l.zip_code },
-        { header: 'Status',       key: l => l.status || 'New' },
-        { header: 'Notes',        key: l => l.notes || l.lead_summary || l.value_proposition },
-      ];
-      const esc  = v => `"${(v||'').toString().replace(/"/g,'""')}"`;
-      const header = cols.map(c => c.header).join(',');
-      const rows = state.leads.map(l => cols.map(c => esc(c.key(l))).join(','));
-      downloadBlob(new Blob([[header, ...rows].join('\n')], { type:'text/csv' }),
-                   `leads_${new Date().toISOString().slice(0,10)}.csv`);
-      addLog(`📥 Exported ${state.leads.length} leads as CSV.`, 'success');
+      exportLeadsAsCrmXlsx(state.leads, `leads_${new Date().toISOString().slice(0,10)}.xlsx`);
     });
 
     function hasCompleteContactDetails(lead) {
@@ -2978,51 +2966,11 @@
       }
 
       const excludedContactCount = state.leads.length - contactLeads.length;
-      exportLeadsAsCrmCsv(
+      exportLeadsAsCrmXlsx(
         contactLeads,
-        `contact_leads_${new Date().toISOString().slice(0, 10)}.csv`,
+        `contact_leads_${new Date().toISOString().slice(0, 10)}.xlsx`,
         `Contact Export created with ${contactLeads.length} complete leads; ${excludedContactCount} incomplete leads were excluded. Exported`,
       );
-      return;
-
-      const cols = [
-        { header: 'Company Name', key: l => l.company_name },
-        { header: 'Specialty', key: l => l.specialty || l.industry },
-        { header: 'Lead Summary', key: l => l.lead_summary || buildLeadSummary(l) },
-        { header: 'Why Accepted', key: l => l.acceptance_reason || l.confidence_explanation || '' },
-        { header: 'Contact Name', key: l => l.contact_person_name || l.founder_name },
-        { header: 'Person LinkedIn', key: l => l.linkedin_url },
-        { header: 'Company LinkedIn', key: l => l.company_linkedin_url || '' },
-        { header: 'Email', key: l => l.contact_email },
-        { header: 'Email Verification Status', key: l => getEmailVerificationStatus(l) === 'not verified' ? '' : getEmailVerificationStatus(l) },
-        { header: 'Email Verification Confidence', key: l => l.verification_confidence || '' },
-        { header: 'Email Verification Message', key: l => l.verification_message || '' },
-        { header: 'Email Provider', key: l => l.email_provider_type || '' },
-        { header: 'Email Catch All', key: l => l.email_catch_all === true ? 'yes' : (l.email_catch_all === false ? 'no' : '') },
-        { header: 'Role Email', key: l => l.email_is_role === true ? 'yes' : (l.email_is_role === false ? 'no' : '') },
-        { header: 'Phone', key: l => l.contact_phone },
-        { header: 'Alternate Phones', key: l => Array.isArray(l.alternate_phones) ? l.alternate_phones.join(' | ') : (l.alternate_phones || '') },
-        { header: 'Phone Confidence', key: l => l.phone_confidence || '' },
-        { header: 'Phone Source', key: l => l.phone_source || '' },
-        { header: 'Phone Status', key: l => l.phone_validation_status || '' },
-        { header: 'Website', key: l => l.company_website },
-        { header: 'City', key: l => l.city },
-        { header: 'State', key: l => l.state },
-        { header: 'Zip Code', key: l => l.zip_code },
-        { header: 'Status', key: l => l.status || 'New' },
-        { header: 'Notes', key: l => l.notes || l.lead_summary || l.value_proposition },
-      ];
-      const escapeCsv = value => `"${String(value || '').replace(/"/g, '""')}"`;
-      const csvLines = [
-        cols.map(column => column.header).join(','),
-        ...contactLeads.map(lead => cols.map(column => escapeCsv(column.key(lead))).join(',')),
-      ];
-      downloadBlob(
-        new Blob(['\ufeff', csvLines.join('\n')], { type: 'text/csv;charset=utf-8' }),
-        `contact_leads_${new Date().toISOString().slice(0, 10)}.csv`,
-      );
-      const excludedCount = state.leads.length - contactLeads.length;
-      addLog(`Contact Export created with ${contactLeads.length} complete leads; ${excludedCount} incomplete leads were excluded.`, 'success');
     });
 
     document.getElementById('export-json-btn').addEventListener('click', () => {

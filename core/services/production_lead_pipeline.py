@@ -6,9 +6,9 @@ import logging
 import os
 import re
 import uuid
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
-from urllib.parse import urlparse
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from google import genai
@@ -67,10 +67,13 @@ class VerifiedTarget:
     company_name: str = ""
     directory_url: str = ""
     status_code: int = 0
+    contact_signals: Dict[str, Any] = field(default_factory=dict)
 
 
 class ProductionLeadPipeline:
     """Cost-controlled four-phase lead discovery pipeline for the lead dashboard."""
+
+    CONTACT_PATHS = ("", "contact", "about", "team")
 
     def __init__(
         self,
@@ -90,17 +93,17 @@ class ProductionLeadPipeline:
             if model
         ]
         try:
-            self.gemini_max_calls_per_run = int(os.getenv("LEAD_GEMINI_MAX_CALLS_PER_RUN", "1"))
+            self.gemini_max_calls_per_run = int(os.getenv("LEAD_GEMINI_MAX_CALLS_PER_RUN", "2"))
         except ValueError:
-            self.gemini_max_calls_per_run = 1
+            self.gemini_max_calls_per_run = 2
         try:
             self.gemini_directory_analysis_enabled = os.getenv("LEAD_GEMINI_DIRECTORY_ANALYSIS", "1").strip() != "0"
         except Exception:
             self.gemini_directory_analysis_enabled = True
         try:
-            self.linkedin_enrichment_limit = max(0, min(int(os.getenv("LEAD_LINKEDIN_ENRICHMENT_LIMIT", "6")), 10))
+            self.linkedin_enrichment_limit = max(0, min(int(os.getenv("LEAD_LINKEDIN_ENRICHMENT_LIMIT", "4")), 10))
         except ValueError:
-            self.linkedin_enrichment_limit = 6
+            self.linkedin_enrichment_limit = 4
         try:
             self.official_site_resolution_limit = max(6, min(int(os.getenv("LEAD_OFFICIAL_SITE_RESOLUTION_LIMIT", "12")), 20))
         except ValueError:
@@ -141,23 +144,31 @@ class ProductionLeadPipeline:
             )
 
             whitelisted = filter_whitelisted_directory_results(search_results)
+            candidate_seed_results = self._prioritized_candidate_results(
+                search_results,
+                whitelisted,
+                industry=industry,
+                location=location,
+            )
             phase_steps.append(
                 {
                     "step": 2,
-                    "stage": "whitelist_filtering",
+                    "stage": "candidate_filtering",
                     "type": "local_validator",
                     "input_count": len(search_results),
-                    "result_count": len(whitelisted),
+                    "result_count": len(candidate_seed_results),
+                    "trusted_directory_count": len(whitelisted),
                 }
             )
 
             corporate_targets = await self._resolve_corporate_targets(
-                whitelisted,
+                candidate_seed_results,
                 industry=industry,
                 location=location,
                 limit=max(10, target_count),
             )
             verified = await self._verify_targets(corporate_targets, limit=max(10, target_count))
+            verified = await self._scrape_contact_pages_batch(verified)
             phase_steps.append(
                 {
                     "step": 3,
@@ -202,6 +213,7 @@ class ProductionLeadPipeline:
                     "extract_depth": DEFAULT_TAVILY_EXTRACT_DEPTH,
                     "discovered_targets": len(search_results),
                     "whitelisted_targets": len(whitelisted),
+                    "candidate_targets": len(candidate_seed_results),
                     "corporate_targets": len(corporate_targets),
                     "verified_targets": len(verified),
                     "scored_targets": len(leads),
@@ -231,7 +243,7 @@ class ProductionLeadPipeline:
             industry=industry,
             location=location,
             seed_query=seed_query,
-            max_queries=10,
+            max_queries=3,
         )
         seen_urls = set()
         results: List[Dict[str, Any]] = []
@@ -263,6 +275,58 @@ class ProductionLeadPipeline:
                 )
         return results
 
+    def _prioritized_candidate_results(
+        self,
+        search_results: Iterable[Dict[str, Any]],
+        whitelisted_results: Iterable[Dict[str, Any]],
+        *,
+        industry: str,
+        location: str,
+    ) -> List[Dict[str, Any]]:
+        candidates: List[Dict[str, Any]] = []
+        seen_urls = set()
+
+        def add(item: Dict[str, Any], *, company_name: str = "") -> None:
+            url = str(item.get("url") or "").strip()
+            if not url or url in seen_urls:
+                return
+            seen_urls.add(url)
+            normalized = dict(item)
+            if company_name:
+                normalized["company_name"] = company_name
+            candidates.append(normalized)
+
+        for item in search_results or []:
+            url = str(item.get("url") or "").strip()
+            title = str(item.get("title") or "").strip()
+            content = str(item.get("content") or "").strip()
+            if not url or self._is_directory_or_noise_url(url):
+                continue
+            company_name = self._resolve_company_name("", title=title, url=url)
+            if not self._looks_like_valid_company_name(company_name):
+                continue
+            if self._looks_like_operating_company_result(
+                url=url,
+                title=title,
+                content=content,
+                company_name=company_name,
+                industry=industry,
+                location=location,
+            ) or self._official_site_candidate_score(
+                url=url,
+                title=title,
+                content=content,
+                company_name=company_name,
+                industry=industry,
+                location=location,
+            ) >= 2:
+                add(item, company_name=company_name)
+
+        for item in whitelisted_results or []:
+            add(item)
+
+        return candidates
+
     async def _resolve_corporate_targets(
         self,
         directory_items: Iterable[Dict[str, Any]],
@@ -286,18 +350,53 @@ class ProductionLeadPipeline:
         shortlisted_items: List[Dict[str, Any]] = []
         for item in candidate_items:
             company_name = str(item.get("company_name") or "").strip() or self._company_name_from_directory_item(item)
+            url = str(item.get("url") or item.get("official_url") or "").strip()
+            title = str(item.get("title") or company_name).strip()
+            content = str(item.get("content") or "").strip()
+            if not company_name:
+                company_name = self._resolve_company_name("", title=title, url=url)
             if not company_name:
                 continue
             company_key = company_name.lower()
             if company_key in seen_companies:
                 continue
             seen_companies.add(company_key)
+            if url and not self._is_directory_or_noise_url(url):
+                if self._looks_like_operating_company_result(
+                    url=url,
+                    title=title,
+                    content=content,
+                    company_name=company_name,
+                    industry=industry,
+                    location=location,
+                ) or self._official_site_candidate_score(
+                    url=url,
+                    title=title,
+                    content=content,
+                    company_name=company_name,
+                    industry=industry,
+                    location=location,
+                ) >= 2:
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        targets.append(
+                            {
+                                "url": url,
+                                "title": title,
+                                "content": content,
+                                "company_name": company_name,
+                                "directory_url": str(item.get("directory_url") or "").strip(),
+                            }
+                        )
+                    if len(targets) >= max(1, min(max(limit, 18), 20)):
+                        break
+                    continue
             shortlisted_items.append(
                 {
                     "company_name": company_name,
-                    "url": str(item.get("url") or "").strip(),
-                    "title": str(item.get("title") or company_name).strip(),
-                    "content": str(item.get("content") or "").strip(),
+                    "url": url,
+                    "title": title,
+                    "content": content,
                 }
             )
             if len(shortlisted_items) >= self.official_site_resolution_limit:
@@ -367,12 +466,14 @@ class ProductionLeadPipeline:
                     "Prefer companies that appear to match the requested industry and location.",
                     "If a snippet mentions multiple companies, include the strongest one only.",
                     "Keep the original directory_url that supplied the evidence.",
+                    "If the snippet already contains a likely official company website URL or domain, include it as official_url.",
                 ],
                 "output_schema": {
                     "companies": [
                         {
                             "company_name": "string",
                             "directory_url": "string",
+                            "official_url": "string",
                             "reason": "short evidence phrase",
                         }
                     ]
@@ -409,7 +510,8 @@ class ProductionLeadPipeline:
             normalized.append(
                 {
                     "company_name": company_name,
-                    "url": directory_url or str(source_item.get("url") or ""),
+                    "url": str(company.get("official_url") or "").strip() or directory_url or str(source_item.get("url") or ""),
+                    "directory_url": directory_url,
                     "title": str(source_item.get("title") or company_name),
                     "content": str(company.get("reason") or source_item.get("content") or ""),
                     "query": str(source_item.get("query") or ""),
@@ -484,6 +586,8 @@ class ProductionLeadPipeline:
         url = str(item.get("url") or "").strip()
         if not url:
             return None
+        if not re.match(r"^https?://", url, re.IGNORECASE):
+            url = f"https://{url.lstrip('/')}"
         try:
             response = await client.get(url)
             text_sample = (response.text or "")[:1500].lower()
@@ -502,54 +606,265 @@ class ProductionLeadPipeline:
             self.logger.info("lead_pipeline_verify_skip", extra={"payload": json.dumps({"url": url, "error": str(exc)})})
             return None
 
+    async def _scrape_contact_pages_batch(self, targets: List[VerifiedTarget]) -> List[VerifiedTarget]:
+        if not targets:
+            return []
+        timeout = httpx.Timeout(connect=4.0, read=6.0, write=4.0, pool=4.0)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers=BROWSER_VERIFICATION_HEADERS,
+        ) as client:
+            scraped = await asyncio.gather(
+                *(self._scrape_contact_pages_for_target(client, target) for target in targets),
+                return_exceptions=True,
+            )
+        enriched: List[VerifiedTarget] = []
+        for index, item in enumerate(scraped):
+            target = targets[index]
+            if isinstance(item, Exception) or not isinstance(item, dict):
+                enriched.append(target)
+                continue
+            target.contact_signals = item
+            signal_text = self._contact_signals_to_text(item)
+            if signal_text:
+                target.content = f"{target.content}\n\nFree contact page signals:\n{signal_text}".strip()
+            enriched.append(target)
+        return enriched
+
+    async def _scrape_contact_pages_for_target(
+        self,
+        client: httpx.AsyncClient,
+        target: VerifiedTarget,
+    ) -> Dict[str, Any]:
+        base_home = self._homepage_url(target.url)
+        signals: Dict[str, Any] = {
+            "emails": [],
+            "phones": [],
+            "linkedin_urls": [],
+            "person_names": [],
+            "person_titles": [],
+            "pages": [],
+            "text": "",
+        }
+        text_parts: List[str] = []
+        seen_pages = set()
+        for path in self.CONTACT_PATHS:
+            page_url = urljoin(base_home.rstrip("/") + "/", path)
+            if page_url in seen_pages:
+                continue
+            seen_pages.add(page_url)
+            try:
+                response = await client.get(page_url)
+            except Exception:
+                continue
+            if response.status_code >= 400:
+                continue
+            html = response.text or ""
+            visible_text = self._html_to_text(html)
+            text_parts.append(visible_text[:8000])
+            signals["pages"].append(page_url)
+            self._collect_contact_page_signals(signals, html, visible_text, source_url=page_url)
+        signals["text"] = "\n".join(part for part in text_parts if part)[:20000]
+        return {key: value for key, value in signals.items() if value}
+
     async def _extract_targets(self, targets: List[VerifiedTarget]) -> List[Dict[str, Any]]:
         if not targets:
             return []
-        urls = [target.url for target in targets]
-        target_by_url = {target.url: target for target in targets}
+        normalized: List[Dict[str, Any]] = []
+        extract_urls: List[str] = []
+        target_by_url: Dict[str, VerifiedTarget] = {}
+        for target in targets:
+            if self._has_good_contact_signals(target.contact_signals):
+                normalized.append(self._normalized_target_without_extract(target))
+                continue
+            extract_url = self._best_extract_url_for_target(target)
+            if extract_url not in target_by_url:
+                extract_urls.append(extract_url)
+                target_by_url[extract_url] = target
+        if not extract_urls:
+            return normalized
         try:
             data = await self.tavily.extract(
                 {
-                    "urls": urls,
+                    "urls": extract_urls,
                     "extract_depth": DEFAULT_TAVILY_EXTRACT_DEPTH,
                     "include_images": False,
                 }
             )
         except Exception as exc:
             self.logger.warning("lead_pipeline_tavily_extract_failed", extra={"payload": str(exc)})
-            return [
-                {
-                    "url": target.url,
-                    "title": target.title,
-                    "content": target.content,
-                    "raw_content": target.content,
-                    "company_name": target.company_name,
-                    "directory_url": target.directory_url,
-                }
-                for target in targets
-            ]
+            normalized.extend(self._normalized_target_without_extract(target) for target in target_by_url.values())
+            return normalized
 
         extracted_items = data.get("results") or data.get("data") or []
         if isinstance(extracted_items, dict):
             extracted_items = [extracted_items]
 
-        normalized: List[Dict[str, Any]] = []
+        extracted_target_ids = set()
         for item in extracted_items:
             if not isinstance(item, dict):
                 continue
             url = str(item.get("url") or item.get("source_url") or "").strip()
             target = target_by_url.get(url) or next((candidate for candidate in targets if candidate.url.rstrip("/") == url.rstrip("/")), None)
             text = self._clean_markdown(item.get("raw_content") or item.get("content") or item.get("text") or "")
+            contact_text = self._contact_signals_to_text(target.contact_signals if target else {})
+            combined_text = "\n\n".join(part for part in (text, target.content if target else "", contact_text) if part)
+            if target:
+                extracted_target_ids.add(id(target))
             normalized.append(
                 {
-                    "url": url or (target.url if target else ""),
+                    "url": target.url if target else url,
+                    "extract_url": url,
                     "title": str(item.get("title") or (target.title if target else "") or "").strip(),
-                    "content": text or (target.content if target else ""),
+                    "content": self._clean_markdown(combined_text),
                     "company_name": target.company_name if target else "",
                     "directory_url": target.directory_url if target else "",
+                    "contact_signals": target.contact_signals if target else {},
                 }
             )
+        for target in target_by_url.values():
+            if id(target) not in extracted_target_ids:
+                normalized.append(self._normalized_target_without_extract(target))
         return normalized
+
+    def _normalized_target_without_extract(self, target: VerifiedTarget) -> Dict[str, Any]:
+        contact_text = self._contact_signals_to_text(target.contact_signals)
+        combined_text = "\n\n".join(part for part in (target.content, contact_text) if part)
+        return {
+            "url": target.url,
+            "extract_url": "",
+            "title": target.title,
+            "content": self._clean_markdown(combined_text),
+            "raw_content": self._clean_markdown(combined_text),
+            "company_name": target.company_name,
+            "directory_url": target.directory_url,
+            "contact_signals": target.contact_signals,
+        }
+
+    def _best_extract_url_for_target(self, target: VerifiedTarget) -> str:
+        signals = target.contact_signals or {}
+        pages = [str(page or "").strip() for page in signals.get("pages") or []]
+        if not (signals.get("emails") and signals.get("phones")):
+            contact_page = next((page for page in pages if "/contact" in urlparse(page).path.lower()), "")
+            if contact_page:
+                return contact_page
+            return urljoin(self._homepage_url(target.url).rstrip("/") + "/", "contact")
+        return target.url
+
+    @staticmethod
+    def _has_good_contact_signals(signals: Dict[str, Any]) -> bool:
+        if not signals:
+            return False
+        emails = signals.get("emails") or []
+        phones = signals.get("phones") or []
+        people = signals.get("person_names") or []
+        return bool(emails and phones and people)
+
+    @classmethod
+    def _contact_signals_to_text(cls, signals: Dict[str, Any]) -> str:
+        if not signals:
+            return ""
+        lines: List[str] = []
+        for label, key in (
+            ("emails", "emails"),
+            ("phones", "phones"),
+            ("linkedin", "linkedin_urls"),
+            ("people", "person_names"),
+            ("titles", "person_titles"),
+            ("pages", "pages"),
+        ):
+            values = [str(value).strip() for value in signals.get(key) or [] if str(value).strip()]
+            if values:
+                lines.append(f"{label}: {' | '.join(values[:5])}")
+        if signals.get("text"):
+            lines.append(f"text: {str(signals.get('text'))[:6000]}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _collect_contact_page_signals(
+        cls,
+        signals: Dict[str, Any],
+        html: str,
+        visible_text: str,
+        *,
+        source_url: str,
+    ) -> None:
+        combined = cls._deobfuscate_contact_text(f"{html}\n{visible_text}")
+        for email in cls._valid_email_matches(combined):
+            if email not in signals["emails"]:
+                signals["emails"].append(email)
+        phone_summary = phone_summary_from_text(combined, source_type="contact_page", source_url=source_url)
+        for phone in [phone_summary.get("contact_phone", "")] + list(phone_summary.get("alternate_phones") or []):
+            if phone and phone not in signals["phones"]:
+                signals["phones"].append(phone)
+        for url in re.findall(r"https?://(?:www\.)?linkedin\.com/[^\s\"'<>]+", combined, re.IGNORECASE):
+            cleaned = url.strip(" .,:;()[]{}<>\"'")
+            if cleaned and cleaned not in signals["linkedin_urls"]:
+                signals["linkedin_urls"].append(cleaned)
+        for name, title in cls._extract_people_from_contact_text(visible_text):
+            if name and name not in signals["person_names"]:
+                signals["person_names"].append(name)
+            if title and title not in signals["person_titles"]:
+                signals["person_titles"].append(title)
+
+    @classmethod
+    def _extract_people_from_contact_text(cls, text: str) -> List[Tuple[str, str]]:
+        cleaned = re.sub(r"\s+", " ", text or "").strip()
+        patterns = (
+            r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*[-,|]\s*((?:Founder|Co-Founder|CEO|Owner|President|Director|Managing Director|Principal)[^.;|]{0,80})",
+            r"\b(?:Founder|Co-Founder|CEO|Owner|President|Director|Managing Director|Principal)\s*[-,|:]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})",
+            r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}),?\s+(?:is\s+)?(?:the\s+)?((?:founder|co-founder|ceo|owner|president|director|managing director|principal)[^.;|]{0,80})",
+        )
+        people: List[Tuple[str, str]] = []
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, cleaned, re.IGNORECASE):
+                if len(match.groups()) == 1:
+                    name, title = match.group(1), ""
+                elif re.search(r"founder|ceo|owner|president|director|principal", match.group(1), re.IGNORECASE):
+                    title, name = match.group(1), match.group(2)
+                else:
+                    name, title = match.group(1), match.group(2)
+                name = re.sub(r"\s+", " ", name).strip(" -|,")
+                title = re.sub(r"\s+", " ", title).strip(" -|,")
+                title = re.split(
+                    r"\b(?:email|e-mail|call|phone|tel|mobile|contact)\b|[A-Z0-9._%+\-]+\s*(?:@|\[at\]|\(at\))",
+                    title,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip(" -|,")
+                if not cls._looks_like_person_name(name):
+                    continue
+                key = name.lower()
+                if key not in seen:
+                    seen.add(key)
+                    people.append((name[:120], title[:160]))
+                if len(people) >= 5:
+                    return people
+        return people
+
+    @staticmethod
+    def _html_to_text(html: str) -> str:
+        text = re.sub(r"(?is)<(script|style|noscript).*?</\1>", " ", html or "")
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = (
+            text.replace("&amp;", "&")
+            .replace("&nbsp;", " ")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&#64;", "@")
+        )
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _deobfuscate_contact_text(text: str) -> str:
+        cleaned = text or ""
+        cleaned = re.sub(r"\s*(?:\[|\()\s*at\s*(?:\]|\))\s*", "@", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(?:at)\s+", "@", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*(?:\[|\()\s*dot\s*(?:\]|\))\s*", ".", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+(?:dot)\s+", ".", cleaned, flags=re.IGNORECASE)
+        return cleaned
 
     async def _score_extracted_targets(
         self,
@@ -559,13 +874,21 @@ class ProductionLeadPipeline:
         location: str,
         target_count: int,
     ) -> List[Dict[str, Any]]:
+        candidate_items = items[: max(10, target_count)]
+        gemini_by_url = await self._gemini_batch_contact_scores(
+            candidate_items,
+            industry=industry,
+            location=location,
+        )
         scored: List[Dict[str, Any]] = []
-        for index, item in enumerate(items[: max(10, target_count)]):
+        for item in candidate_items:
+            item_url = str(item.get("url") or "").strip()
             lead = await self._score_one(
                 item,
                 industry=industry,
                 location=location,
-                use_gemini=index < max(0, self.gemini_max_calls_per_run),
+                use_gemini=False,
+                gemini_data=gemini_by_url.get(item_url, {}),
             )
             if lead:
                 scored.append(lead)
@@ -584,9 +907,19 @@ class ProductionLeadPipeline:
         if not os.path.exists(os.path.join(os.getcwd(), "linkedin_session.json")):
             return leads
 
+        eligible_indexes = [
+            index
+            for index, lead in enumerate(leads)
+            if not (
+                self._first_non_empty(lead.get("contact_email"))
+                and self._first_non_empty(lead.get("contact_person_name"), lead.get("founder_name"))
+            )
+        ]
+        eligible_indexes = set(eligible_indexes[: self.linkedin_enrichment_limit])
+
         async def enrich_one(index: int, lead: Dict[str, Any]) -> Dict[str, Any]:
             item = dict(lead)
-            if index >= self.linkedin_enrichment_limit:
+            if index not in eligible_indexes:
                 return item
 
             linkedin_url = str(item.get("linkedin_url") or "").strip()
@@ -661,22 +994,32 @@ class ProductionLeadPipeline:
         industry: str,
         location: str,
         use_gemini: bool = True,
+        gemini_data: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         url = str(item.get("url") or "").strip()
         if not url:
             return None
         title = str(item.get("title") or "").strip()
         text = self._clean_markdown(item.get("content") or "")
+        contact_signals = item.get("contact_signals") if isinstance(item.get("contact_signals"), dict) else {}
+        gemini_data = gemini_data or {}
         ai_score = (
             await self._gemini_score(title=title, url=url, text=text, industry=industry, location=location)
             if use_gemini
-            else {"qualification_score": self._heuristic_score(text=text, industry=industry, location=location), "value_proposition": ""}
+            else {
+                "qualification_score": self._first_non_empty(
+                    gemini_data.get("qualification_score"),
+                    self._heuristic_score(text=text, industry=industry, location=location),
+                ),
+                "value_proposition": self._first_non_empty(gemini_data.get("value_proposition"), gemini_data.get("summary")),
+                **gemini_data,
+            }
         )
 
         score_10 = self._coerce_score_10(ai_score.get("qualification_score", 0))
         summary = str(ai_score.get("value_proposition") or ai_score.get("summary") or "").strip()
         company_name = self._resolve_company_name(
-            str(item.get("company_name") or "").strip(),
+            str(ai_score.get("company_name") or item.get("company_name") or "").strip(),
             title=title,
             url=url,
         )
@@ -699,6 +1042,34 @@ class ProductionLeadPipeline:
             location=location,
         )
         phone_summary = phone_summary_from_text(text, source_type="tavily_extract", source_url=url)
+        scraped_phone_summary = build_phone_summary(
+            phone_candidates_from_values(
+                list(contact_signals.get("phones") or []) + [ai_score.get("contact_phone")],
+                source_type="contact_page",
+                source_url=url,
+            )
+        )
+        contact_email = self._first_non_empty(
+            *(contact_signals.get("emails") or [])[:1],
+            ai_score.get("contact_email"),
+            self._first_valid_email(text),
+        )
+        person_name = self._first_non_empty(
+            *(contact_signals.get("person_names") or [])[:1],
+            ai_score.get("person_name"),
+            ai_score.get("contact_person_name"),
+            ai_score.get("founder_name"),
+        )
+        person_title = self._first_non_empty(
+            *(contact_signals.get("person_titles") or [])[:1],
+            ai_score.get("person_title"),
+            ai_score.get("contact_person_title"),
+        )
+        linkedin_url = self._first_non_empty(
+            *(contact_signals.get("linkedin_urls") or [])[:1],
+            ai_score.get("linkedin_url"),
+            self._first_linkedin_url(text),
+        )
         lead = {
             "company_name": company_name,
             "company_website": url,
@@ -708,26 +1079,26 @@ class ProductionLeadPipeline:
             "value_proposition": summary,
             "lead_summary": "",
             "company_size": "",
-            "contact_person_name": "",
-            "founder_name": "",
-            "contact_person_title": "",
-            "contact_email": self._first_valid_email(text),
-            "contact_phone": phone_summary.get("contact_phone", ""),
+            "contact_person_name": person_name,
+            "founder_name": person_name,
+            "contact_person_title": person_title,
+            "contact_email": contact_email,
+            "contact_phone": self._first_non_empty(scraped_phone_summary.get("contact_phone"), phone_summary.get("contact_phone")),
             "alternate_phones": phone_summary.get("alternate_phones", []),
-            "phone_confidence": phone_summary.get("phone_confidence", 0),
-            "phone_source": phone_summary.get("phone_source", ""),
-            "phone_validation_status": phone_summary.get("phone_validation_status", ""),
-            "phone_type": phone_summary.get("phone_type", ""),
-            "phone_candidates": phone_summary.get("phone_candidates", []),
-            "linkedin_url": self._first_linkedin_url(text),
+            "phone_confidence": max(int(scraped_phone_summary.get("phone_confidence") or 0), int(phone_summary.get("phone_confidence") or 0)),
+            "phone_source": self._first_non_empty(scraped_phone_summary.get("phone_source"), phone_summary.get("phone_source")),
+            "phone_validation_status": self._first_non_empty(scraped_phone_summary.get("phone_validation_status"), phone_summary.get("phone_validation_status")),
+            "phone_type": self._first_non_empty(scraped_phone_summary.get("phone_type"), phone_summary.get("phone_type")),
+            "phone_candidates": scraped_phone_summary.get("phone_candidates") or phone_summary.get("phone_candidates", []),
+            "linkedin_url": linkedin_url,
             "contact_page": url,
             "source": "trusted_directory",
             "source_details": [
                 {
                     "stage": "production_pipeline",
                     "type": "verified_extracted_target",
-                    "provider": "tavily_extract",
-                    "url": url,
+                    "provider": "free_contact_scrape" if not item.get("extract_url") else "tavily_extract",
+                    "url": str(item.get("extract_url") or url),
                     "title": title,
                 }
             ] + (
@@ -751,6 +1122,8 @@ class ProductionLeadPipeline:
             "verification_message": "Verified with browser-like headers before extraction.",
             "notes": summary,
         }
+        self._apply_phone_summary(lead, phone_summary)
+        self._apply_phone_summary(lead, scraped_phone_summary)
         lead["lead_summary"] = build_plain_lead_summary(lead)
         quality = score_lead(lead)
         lead.update({k: v for k, v in quality.items() if k != "quality_score"})
@@ -769,44 +1142,39 @@ class ProductionLeadPipeline:
         if not cleaned_name:
             return {}
 
-        queries = [
-            f"\"{cleaned_name}\" \"{location}\" founder CEO owner LinkedIn",
-            f"site:linkedin.com/in \"{cleaned_name}\" \"{location}\" founder OR ceo OR owner",
-            f"site:linkedin.com/company \"{cleaned_name}\" \"{location}\" {industry}",
-        ]
+        query = f'site:linkedin.com "{cleaned_name}" founder OR ceo OR owner'
         best_company_candidate: Dict[str, str] = {}
-        for query in queries:
-            try:
-                data = await self.tavily.search(
-                    {
-                        "query": query,
-                        "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
-                        "max_results": 6,
-                        "include_raw_content": False,
-                    }
-                )
-            except Exception as exc:
-                self.logger.info("lead_pipeline_linkedin_search_failed", extra={"payload": str(exc)})
-                continue
+        try:
+            data = await self.tavily.search(
+                {
+                    "query": query,
+                    "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
+                    "max_results": 6,
+                    "include_raw_content": False,
+                }
+            )
+        except Exception as exc:
+            self.logger.info("lead_pipeline_linkedin_search_failed", extra={"payload": str(exc)})
+            return {}
 
-            for result in data.get("results") or []:
-                candidate_url = str(result.get("url") or "").strip()
-                if not candidate_url or "linkedin.com/" not in candidate_url:
-                    continue
-                title = str(result.get("title") or "").strip()
-                content = str(result.get("content") or "").strip()
-                if "linkedin.com/in/" in candidate_url:
-                    return {
-                        "url": candidate_url,
-                        "person_name": self._extract_person_name_from_linkedin_result(title=title, content=content),
-                        "title_hint": self._extract_person_title_from_linkedin_result(title=title, content=content),
-                    }
-                if "linkedin.com/company/" in candidate_url and not best_company_candidate:
-                    best_company_candidate = {
-                        "url": candidate_url,
-                        "person_name": "",
-                        "title_hint": "",
-                    }
+        for result in data.get("results") or []:
+            candidate_url = str(result.get("url") or "").strip()
+            if not candidate_url or "linkedin.com/" not in candidate_url:
+                continue
+            title = str(result.get("title") or "").strip()
+            content = str(result.get("content") or "").strip()
+            if "linkedin.com/in/" in candidate_url:
+                return {
+                    "url": candidate_url,
+                    "person_name": self._extract_person_name_from_linkedin_result(title=title, content=content),
+                    "title_hint": self._extract_person_title_from_linkedin_result(title=title, content=content),
+                }
+            if "linkedin.com/company/" in candidate_url and not best_company_candidate:
+                best_company_candidate = {
+                    "url": candidate_url,
+                    "person_name": "",
+                    "title_hint": "",
+                }
         return best_company_candidate
 
     async def _run_linkedin_research(self, *, linkedin_url: str, company_name: str, website_url: str) -> Dict[str, Any]:
@@ -929,6 +1297,76 @@ class ProductionLeadPipeline:
         merged["quality_score"] = max(0, min(int(merged["quality_score"]), 100))
         merged["lead_summary"] = build_plain_lead_summary(merged)
         return merged
+
+    async def _gemini_batch_contact_scores(
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        industry: str,
+        location: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        if not self._gemini_client or self.gemini_max_calls_per_run <= 0 or not items:
+            return {}
+        compact_items = []
+        for item in items[:20]:
+            compact_items.append(
+                {
+                    "url": str(item.get("url") or "")[:300],
+                    "title": str(item.get("title") or "")[:180],
+                    "company_name_hint": str(item.get("company_name") or "")[:160],
+                    "text": str(item.get("content") or "")[:7000],
+                }
+            )
+        prompt = json.dumps(
+            {
+                "task": "Score B2B leads and extract contact details from website/contact-page text.",
+                "intent_profile": {"industry": industry, "location": location},
+                "rules": [
+                    "Return one result for each input URL.",
+                    "Use only details supported by the supplied text.",
+                    "Extract obfuscated emails such as name [at] company [dot] com when clear.",
+                    "Prefer founders, CEOs, owners, presidents, directors, or managing directors as person contacts.",
+                    "Use qualification_score from 0 to 10.",
+                ],
+                "output_schema": {
+                    "leads": [
+                        {
+                            "url": "string",
+                            "company_name": "string",
+                            "qualification_score": 0,
+                            "value_proposition": "string",
+                            "contact_email": "string",
+                            "contact_phone": "string",
+                            "person_name": "string",
+                            "person_title": "string",
+                            "linkedin_url": "string",
+                        }
+                    ]
+                },
+                "targets": compact_items,
+            },
+            ensure_ascii=False,
+        )
+        parsed = await self._gemini_json(
+            prompt=prompt,
+            system_prompt=(
+                "You are a precise B2B lead data extractor. Output only JSON. "
+                "Do not invent contact details or people that are not supported by the text."
+            ),
+            max_output_tokens=2400,
+        )
+        leads = parsed.get("leads") if isinstance(parsed, dict) else []
+        if not isinstance(leads, list):
+            return {}
+        by_url: Dict[str, Dict[str, Any]] = {}
+        for lead in leads:
+            if not isinstance(lead, dict):
+                continue
+            url = str(lead.get("url") or "").strip()
+            if not url:
+                continue
+            by_url[url] = lead
+        return by_url
 
     async def _gemini_score(self, *, title: str, url: str, text: str, industry: str, location: str) -> Dict[str, Any]:
         if not self._gemini_client:
@@ -1410,6 +1848,15 @@ class ProductionLeadPipeline:
     @staticmethod
     def _phone_pattern() -> re.Pattern[str]:
         return re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+
+    @staticmethod
+    def _homepage_url(url: str) -> str:
+        parsed = urlparse(url or "")
+        if not parsed.scheme:
+            parsed = urlparse(f"https://{str(url or '').lstrip('/')}")
+        if not parsed.netloc:
+            return url or ""
+        return f"{parsed.scheme}://{parsed.netloc}/"
 
     @staticmethod
     def _first_match(pattern: re.Pattern[str], text: str) -> str:

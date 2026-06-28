@@ -23,6 +23,7 @@ from core.services.velit.discovery import (
     looks_like_velit_text,
     normalize_company_key,
     normalize_domain,
+    normalize_velit_location,
 )
 from core.utils.lead_summary import build_plain_lead_summary
 from core.utils.phone_quality import (
@@ -61,42 +62,44 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             self._bounded_int_env("VELIT_GEMINI_MAX_CALLS_PER_RUN", default=8, minimum=2, maximum=20),
         )
         self.linkedin_enrichment_limit = max(
-            self.linkedin_enrichment_limit,
-            self._bounded_int_env("VELIT_LINKEDIN_ENRICHMENT_LIMIT", default=20, minimum=5, maximum=60),
+            0,
+            self._bounded_int_env("VELIT_LINKEDIN_ENRICHMENT_LIMIT", default=min(self.linkedin_enrichment_limit, 4), minimum=0, maximum=20),
         )
-        self.official_site_resolution_limit = max(
-            self.official_site_resolution_limit,
-            self._bounded_int_env("VELIT_OFFICIAL_SITE_RESOLUTION_LIMIT", default=40, minimum=10, maximum=100),
+        self.official_site_resolution_limit = self._bounded_int_env(
+            "VELIT_OFFICIAL_SITE_RESOLUTION_LIMIT",
+            default=min(max(self.official_site_resolution_limit, 8), 12),
+            minimum=0,
+            maximum=40,
         )
         self.max_search_results_per_query = self._bounded_int_env(
             "VELIT_SEARCH_RESULTS_PER_QUERY",
-            default=6,
+            default=5,
             minimum=4,
             maximum=12,
         )
         self.discovery_query_limit = self._bounded_int_env(
             "VELIT_DISCOVERY_QUERY_LIMIT",
-            default=16,
-            minimum=8,
-            maximum=24,
+            default=8,
+            minimum=1,
+            maximum=8,
         )
         self.max_contact_scrapes = self._bounded_int_env(
             "VELIT_CONTACT_SCRAPE_LIMIT",
-            default=40,
+            default=24,
             minimum=8,
             maximum=80,
         )
         self.contact_search_limit = self._bounded_int_env(
             "VELIT_CONTACT_SEARCH_LIMIT",
-            default=18,
-            minimum=10,
-            maximum=100,
+            default=4,
+            minimum=0,
+            maximum=20,
         )
         self.contact_queries_per_company = self._bounded_int_env(
             "VELIT_CONTACT_QUERIES_PER_COMPANY",
-            default=3,
-            minimum=1,
-            maximum=8,
+            default=1,
+            minimum=0,
+            maximum=3,
         )
         self.max_extra_site_links = self._bounded_int_env(
             "VELIT_EXTRA_SITE_LINKS",
@@ -120,6 +123,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         target_count: int = 15,
     ) -> Dict[str, Any]:
         target_count = max(1, min(int(target_count or 15), 100))
+        location = normalize_velit_location(location)
         phase_steps: List[Dict[str, Any]] = []
         try:
             search_results = await self._discover_targets(industry=industry, location=location, seed_query=seed_query)
@@ -671,12 +675,14 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         industry: str,
         location: str,
         use_gemini: bool = True,
+        gemini_data: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         lead = await super()._score_one(
             item,
             industry=industry or "Upfitter",
             location=location,
             use_gemini=use_gemini,
+            gemini_data=gemini_data,
         )
         if not lead:
             return None

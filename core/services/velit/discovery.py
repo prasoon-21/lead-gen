@@ -66,6 +66,8 @@ _VELIT_KEYWORDS = (
 _STATE_CITY_EXPANSIONS = {
     "alaska": ["Anchorage", "Fairbanks", "Wasilla", "Palmer", "Juneau", "Kenai"],
     "ak": ["Anchorage", "Fairbanks", "Wasilla", "Palmer", "Juneau", "Kenai"],
+    "pennsylvania": ["Philadelphia", "Pittsburgh", "Harrisburg", "Allentown", "Lancaster", "Erie"],
+    "pa": ["Philadelphia", "Pittsburgh", "Harrisburg", "Allentown", "Lancaster", "Erie"],
     "new york": ["New York", "Brooklyn", "Long Island", "Albany", "Buffalo", "Rochester"],
     "ny": ["New York", "Brooklyn", "Long Island", "Albany", "Buffalo", "Rochester"],
     "new jersey": ["Newark", "Jersey City", "Trenton", "Edison", "Paterson", "Cherry Hill"],
@@ -74,9 +76,25 @@ _STATE_CITY_EXPANSIONS = {
     "ct": ["Hartford", "New Haven", "Stamford", "Bridgeport", "Waterbury", "Norwalk"],
 }
 
+_LOCATION_ALIASES = {
+    "pensyvania": "Pennsylvania",
+    "pennysylvania": "Pennsylvania",
+    "pennsylvannia": "Pennsylvania",
+    "pennslyvania": "Pennsylvania",
+    "pennsylvania": "Pennsylvania",
+    "pa": "PA",
+}
 
-def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int = 16) -> List[str]:
-    cleaned_location = " ".join((location or "").split()).strip()
+
+def normalize_velit_location(value: str) -> str:
+    cleaned = " ".join((value or "").split()).strip()
+    if not cleaned:
+        return ""
+    return _LOCATION_ALIASES.get(cleaned.lower(), cleaned)
+
+
+def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int = 8) -> List[str]:
+    cleaned_location = normalize_velit_location(location)
     cleaned_seed = " ".join((seed_query or "").split()).strip()
     if not cleaned_location:
         return []
@@ -84,37 +102,22 @@ def build_velit_queries(*, location: str, seed_query: str = "", max_queries: int
     base_queries = [
         f'"van upfitter" "{cleaned_location}" official website',
         f'"van conversion company" "{cleaned_location}" official website',
-        f'"camper van builder" "{cleaned_location}" official website',
-        f'"rv upfitter" "{cleaned_location}" official website',
-        f'"sprinter van conversion" "{cleaned_location}" official website',
-        f'"overland van builder" "{cleaned_location}" official website',
-        f'"custom van interiors" "{cleaned_location}" official website',
-        f'"van outfitter" "{cleaned_location}" contact',
-        f'"mobile upfitter" "{cleaned_location}" website',
-        f'"rv conversion shop" "{cleaned_location}" website',
+        f'"camper van builder" "{cleaned_location}" "contact" OR "email" OR "phone"',
+        f'"sprinter van conversion" "{cleaned_location}" website',
+        f'"rv upfitter" OR "rv conversion" "{cleaned_location}" website',
         f'"van builder" near "{cleaned_location}"',
-        f'"campervan conversion" near "{cleaned_location}"',
     ]
+
+    # Merge city expansion into a single OR-joined query instead of 3 per city
     expanded_locations = _STATE_CITY_EXPANSIONS.get(cleaned_location.lower(), [])
-    for city in expanded_locations:
-        base_queries.extend(
-            [
-                f'"van upfitter" "{city}" official website',
-                f'"van conversion" "{city}" contact',
-                f'"camper van builder" "{city}" website',
-            ]
+    if expanded_locations:
+        cities_or = " OR ".join(f'"{city}"' for city in expanded_locations[:4])
+        base_queries.append(
+            f'"van upfitter" OR "van conversion" {cities_or} official website'
         )
+
     if cleaned_location.lower() in {"alaska", "ak"}:
-        base_queries.extend(
-            [
-                '"camper van conversion" "ships to Alaska"',
-                '"van conversion" "serves Alaska"',
-                '"sprinter van conversion" "Alaska delivery"',
-                '"adventure van" "Alaska" "contact"',
-                '"van upfitter" "Anchorage" phone email',
-                '"camper van rental" "Alaska" "conversion"',
-            ]
-        )
+        base_queries.append('"camper van conversion" "ships to Alaska" OR "serves Alaska"')
     if cleaned_seed:
         base_queries.insert(0, f'"{cleaned_seed}" "{cleaned_location}" official website')
 

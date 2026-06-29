@@ -9,7 +9,7 @@ allowed_tools:
 memory_window: 4
 max_steps: 12
 max_tool_calls: 20
-max_runtime_seconds: 240
+max_runtime_seconds: 300
 default_context:
   output_format: json
   target_company_pool: 80

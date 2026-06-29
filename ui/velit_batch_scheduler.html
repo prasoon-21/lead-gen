@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Velit Batch Scheduler</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .field {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: #0f172a;
+      background: #ffffff;
+      outline: none;
+    }
+    .field:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+    .btn {
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .btn:hover { background: #f8fafc; }
+    .btn-primary { background: #2563eb; border-color: #2563eb; color: #ffffff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { border-color: #fecaca; color: #b91c1c; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      white-space: nowrap;
+    }
+    .status-running { color: #0369a1; border-color: #bae6fd; background: #f0f9ff; }
+    .status-completed { color: #047857; border-color: #bbf7d0; background: #f0fdf4; }
+    .status-failed { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    .status-pending, .status-scheduled { color: #92400e; border-color: #fde68a; background: #fffbeb; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900">
+  <nav class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
+      <div>
+        <h1 class="text-lg font-bold">Velit Batch Scheduler</h1>
+        <p class="text-xs text-slate-500">Multi-location automated lead queue</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a class="btn" href="/leads">Lead Generator</a>
+        <a class="btn" href="/">Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="mx-auto max-w-7xl px-5 py-6">
+    <section class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+        <label class="block">
+          <span class="mb-1 block text-xs font-semibold text-slate-600">Automation</span>
+          <select id="automation-select" class="field"></select>
+        </label>
+        <div class="flex flex-wrap gap-2">
+          <button id="new-automation-btn" class="btn btn-primary" type="button">New Automation</button>
+          <button id="delete-automation-btn" class="btn btn-danger" type="button">Delete Automation</button>
+          <button id="refresh-timer-btn" class="btn" type="button">Refresh Timer</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-bold">Automation Status</div>
+          <div id="automation-summary" class="mt-1 text-sm text-slate-600">Loading...</div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="start-btn" class="btn btn-primary" type="button">Start Automation</button>
+          <button id="pause-btn" class="btn" type="button">Pause</button>
+          <button id="resume-btn" class="btn" type="button">Resume</button>
+          <button id="stop-btn" class="btn btn-danger" type="button">Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <section class="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 class="text-sm font-bold">Automation Settings</h2>
+        <form id="automation-form" class="mt-4 space-y-3">
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Automation Name</span>
+            <input id="automation-name" class="field" type="text" value="Velit multi-location run" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Interval Hours</span>
+            <input id="interval-hours" class="field" type="number" min="0.25" max="168" step="0.25" value="4" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Default Output Folder</span>
+            <input id="output-folder" class="field" type="text" value="exports/velit_scheduled" />
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input id="run-immediately" type="checkbox" checked />
+            <span>Run first item immediately</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input id="repeat-mode" type="checkbox" />
+            <span>Repeat cycle after all items complete</span>
+          </label>
+          <button class="btn btn-primary w-full" type="submit">Save Settings</button>
+        </form>
+      </section>
+
+      <section class="rounded-lg border border-slate-200 bg-white p-4 lg:col-span-2">
+        <h2 class="text-sm font-bold">Add Queue Item</h2>
+        <form id="item-form" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Label</span>
+            <input id="item-label" class="field" type="text" placeholder="Alaska founder leads" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Location</span>
+            <input id="item-location" class="field" type="text" placeholder="Alaska" required />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Industry</span>
+            <input id="item-industry" class="field" type="text" value="Van Upfitter" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Number of Leads</span>
+            <input id="item-target-count" class="field" type="number" min="1" max="100" value="10" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Target Role</span>
+            <input id="item-target-role" class="field" type="text" value="Founder" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Seed Query</span>
+            <input id="item-seed-query" class="field" type="text" placeholder="optional" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-slate-600">Output Folder Override</span>
+            <input id="item-output-folder" class="field" type="text" placeholder="exports/velit_scheduled" />
+          </label>
+          <div class="md:col-span-2">
+            <button class="btn btn-primary w-full" type="submit">Add to Queue</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <section class="mt-5 rounded-lg border border-slate-200 bg-white">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+        <h2 class="text-sm font-bold">Queue</h2>
+        <button id="refresh-btn" class="btn" type="button">Refresh</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-3">Order</th>
+              <th class="px-3 py-3">Label</th>
+              <th class="px-3 py-3">Location</th>
+              <th class="px-3 py-3">Industry</th>
+              <th class="px-3 py-3">Leads</th>
+              <th class="px-3 py-3">Target Role</th>
+              <th class="px-3 py-3">Seed Query</th>
+              <th class="px-3 py-3">Status</th>
+              <th class="px-3 py-3">Duration</th>
+              <th class="px-3 py-3">Last Run</th>
+              <th class="px-3 py-3">Next Eligible Run</th>
+              <th class="px-3 py-3">Output File</th>
+              <th class="px-3 py-3">Error</th>
+              <th class="px-3 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="queue-body" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mt-5 rounded-lg border border-slate-200 bg-white">
+      <div class="border-b border-slate-200 px-4 py-3">
+        <h2 class="text-sm font-bold">Run History</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-3 py-3">Time</th>
+              <th class="px-3 py-3">Location</th>
+              <th class="px-3 py-3">Target Role</th>
+              <th class="px-3 py-3">Status</th>
+              <th class="px-3 py-3">Duration</th>
+              <th class="px-3 py-3">Lead Count</th>
+              <th class="px-3 py-3">Output File</th>
+              <th class="px-3 py-3">Error</th>
+            </tr>
+          </thead>
+          <tbody id="history-body" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+      <h2 class="text-sm font-bold">Status Log</h2>
+      <div id="log" class="mt-3 max-h-56 overflow-y-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100"></div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      snapshot: null,
+      initialized: false,
+      selectedAutomationId: localStorage.getItem('velitSchedulerAutomationId') || '',
+      resetAttemptedOnLoad: false,
+    };
+    const API_ORIGIN = window.location.protocol === 'file:'
+      ? (localStorage.getItem('velitSchedulerApiOrigin') || 'http://127.0.0.1:8000')
+      : '';
+
+    const els = {
+      summary: document.getElementById('automation-summary'),
+      automationSelect: document.getElementById('automation-select'),
+      queueBody: document.getElementById('queue-body'),
+      historyBody: document.getElementById('history-body'),
+      log: document.getElementById('log'),
+      automationForm: document.getElementById('automation-form'),
+      itemForm: document.getElementById('item-form'),
+      automationName: document.getElementById('automation-name'),
+      intervalHours: document.getElementById('interval-hours'),
+      outputFolder: document.getElementById('output-folder'),
+      runImmediately: document.getElementById('run-immediately'),
+      repeatMode: document.getElementById('repeat-mode'),
+      itemLabel: document.getElementById('item-label'),
+      itemLocation: document.getElementById('item-location'),
+      itemIndustry: document.getElementById('item-industry'),
+      itemTargetCount: document.getElementById('item-target-count'),
+      itemTargetRole: document.getElementById('item-target-role'),
+      itemSeedQuery: document.getElementById('item-seed-query'),
+      itemOutputFolder: document.getElementById('item-output-folder'),
+    };
+
+    function automationQuery(path) {
+      const id = state.selectedAutomationId || '';
+      if (!id) return path;
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}automation_id=${encodeURIComponent(id)}`;
+    }
+
+    function addLog(message, type = 'info') {
+      const line = document.createElement('div');
+      const stamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? 'text-red-300' : type === 'success' ? 'text-green-300' : 'text-slate-200';
+      line.className = color;
+      line.textContent = `[${stamp}] ${message}`;
+      els.log.prepend(line);
+    }
+
+    async function api(path, options = {}) {
+      const url = `${API_ORIGIN}/api/velit-batch${path}`;
+      let response;
+      try {
+        response = await fetch(url, {
+          headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+          ...options,
+        });
+      } catch (error) {
+        const hint = API_ORIGIN
+          ? `Cannot reach the backend at ${API_ORIGIN}. Start the FastAPI server, then open http://127.0.0.1:8000/velit-batch-scheduler.`
+          : 'Cannot reach the backend. Refresh the page after the FastAPI server is running.';
+        throw new Error(hint);
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Request failed: ${response.status}`);
+      return data;
+    }
+
+    function fmtDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
+    function shortPath(value) {
+      if (!value) return '-';
+      const text = String(value);
+      return text.length > 64 ? `...${text.slice(-61)}` : text;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function statusPill(status) {
+      const safe = escapeHtml(status || 'pending');
+      return `<span class="status-pill status-${safe}">${safe}</span>`;
+    }
+
+    function formatDuration(seconds) {
+      const total = Math.max(0, Math.floor(Number(seconds) || 0));
+      if (!total) return '-';
+      if (total < 60) return `${total}s`;
+      const mins = Math.floor(total / 60);
+      const secs = total % 60;
+      if (mins < 60) return `${mins}m ${secs}s`;
+      const hours = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hours}h ${remMins}m ${secs}s`;
+    }
+
+    function durationMarkup(record) {
+      const status = record?.status || '';
+      const startedAt = record?.started_at || '';
+      const duration = Number(record?.duration_seconds || 0);
+      const text = status === 'running' && startedAt ? formatDuration((Date.now() - new Date(startedAt).getTime()) / 1000) : formatDuration(duration);
+      return `<span class="duration-timer" data-status="${escapeHtml(status)}" data-started-at="${escapeHtml(startedAt)}" data-duration="${duration}">${escapeHtml(text)}</span>`;
+    }
+
+    function updateDurationTimers() {
+      document.querySelectorAll('.duration-timer').forEach(node => {
+        const status = node.dataset.status || '';
+        const startedAt = node.dataset.startedAt || '';
+        const duration = Number(node.dataset.duration || 0);
+        if (status === 'running' && startedAt) {
+          node.textContent = formatDuration((Date.now() - new Date(startedAt).getTime()) / 1000);
+        } else {
+          node.textContent = formatDuration(duration);
+        }
+      });
+    }
+
+    function errorMarkup(value) {
+      const text = String(value || '').trim();
+      if (!text) return '-';
+      const timeout = /timeout/i.test(text);
+      const classes = timeout
+        ? 'inline-flex max-w-[220px] rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700'
+        : 'inline-flex max-w-[220px] text-red-700';
+      return `<span class="${classes}" title="${escapeHtml(text)}">${escapeHtml(shortPath(text))}</span>`;
+    }
+
+    function syncAutomationSelect(snapshot) {
+      const automations = snapshot.automations || [];
+      const selected = snapshot.automation || {};
+      state.selectedAutomationId = selected.id || state.selectedAutomationId || 'default';
+      localStorage.setItem('velitSchedulerAutomationId', state.selectedAutomationId);
+      els.automationSelect.innerHTML = automations.map(automation => `
+        <option value="${escapeHtml(automation.id)}">${escapeHtml(automation.name || automation.id)}</option>
+      `).join('');
+      els.automationSelect.value = state.selectedAutomationId;
+    }
+
+    function syncSettingsForm(automation) {
+      if (state.initialized === automation.id) return;
+      els.automationName.value = automation.name || 'Velit multi-location run';
+      els.intervalHours.value = automation.interval_hours || 4;
+      els.outputFolder.value = automation.output_folder || 'exports/velit_scheduled';
+      els.runImmediately.checked = automation.run_immediately !== false;
+      els.repeatMode.checked = Boolean(automation.repeat_mode);
+      state.initialized = automation.id;
+    }
+
+    function render(snapshot) {
+      state.snapshot = snapshot;
+      const automation = snapshot.automation || {};
+      syncAutomationSelect(snapshot);
+      syncSettingsForm(automation);
+      const status = automation.running ? 'running' : automation.enabled ? 'enabled' : 'stopped';
+      const current = automation.current_item_id ? ` Current item: ${automation.current_item_id}.` : '';
+      els.summary.textContent =
+        `Status: ${status}. Interval: ${automation.interval_hours || 4}h. ` +
+        `Last run: ${fmtDate(automation.last_run_at)}. Next run: ${fmtDate(automation.next_run_at)}.${current}`;
+
+      const nextRun = fmtDate(automation.next_run_at);
+      els.queueBody.innerHTML = (snapshot.items || []).map(item => `
+        <tr>
+          <td class="px-3 py-3 font-semibold">${item.order}</td>
+          <td class="px-3 py-3">${escapeHtml(item.label)}</td>
+          <td class="px-3 py-3">${escapeHtml(item.location)}</td>
+          <td class="px-3 py-3">${escapeHtml(item.industry || 'Van Upfitter')}</td>
+          <td class="px-3 py-3">${item.target_count}</td>
+          <td class="px-3 py-3">${escapeHtml(item.target_role)}</td>
+          <td class="px-3 py-3">${escapeHtml(item.seed_query || '-')}</td>
+          <td class="px-3 py-3">${statusPill(item.status)}</td>
+          <td class="px-3 py-3">${durationMarkup(item)}</td>
+          <td class="px-3 py-3">${fmtDate(item.finished_at || item.started_at)}</td>
+          <td class="px-3 py-3">${['pending', 'scheduled'].includes(item.status) ? nextRun : '-'}</td>
+          <td class="px-3 py-3" title="${escapeHtml(item.output_file_path)}">${escapeHtml(shortPath(item.output_file_path))}</td>
+          <td class="px-3 py-3">${errorMarkup(item.last_error)}</td>
+          <td class="px-3 py-3">
+            <div class="flex flex-wrap gap-1">
+              <button class="btn" data-action="up" data-id="${item.id}" type="button">Up</button>
+              <button class="btn" data-action="down" data-id="${item.id}" type="button">Down</button>
+              <button class="btn" data-action="run" data-id="${item.id}" type="button">Run now</button>
+              <button class="btn" data-action="edit" data-id="${item.id}" type="button">Edit</button>
+              <button class="btn" data-action="reset" data-id="${item.id}" type="button">Reset</button>
+              <button class="btn btn-danger" data-action="delete" data-id="${item.id}" type="button">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `).join('') || '<tr><td class="px-3 py-5 text-slate-500" colspan="14">No queue items yet.</td></tr>';
+
+      els.historyBody.innerHTML = (snapshot.recent_runs || []).map(run => `
+        <tr>
+          <td class="px-3 py-3">${fmtDate(run.finished_at || run.started_at)}</td>
+          <td class="px-3 py-3">${escapeHtml(run.location)}</td>
+          <td class="px-3 py-3">${escapeHtml(run.target_role)}</td>
+          <td class="px-3 py-3">${statusPill(run.status)}</td>
+          <td class="px-3 py-3">${durationMarkup(run)}</td>
+          <td class="px-3 py-3">${run.lead_count || 0}</td>
+          <td class="px-3 py-3" title="${escapeHtml(run.output_file_path)}">${escapeHtml(shortPath(run.output_file_path))}</td>
+          <td class="px-3 py-3">${errorMarkup(run.error)}</td>
+        </tr>
+      `).join('') || '<tr><td class="px-3 py-5 text-slate-500" colspan="8">No runs yet.</td></tr>';
+      updateDurationTimers();
+    }
+
+    async function loadSnapshot(showLog = false) {
+      try {
+        const snapshot = await api(automationQuery('/automation'));
+        render(snapshot);
+        if (showLog) addLog('Scheduler status refreshed.', 'success');
+      } catch (error) {
+        if (/Automation not found/i.test(error.message || '')) {
+          try {
+            const missingId = state.selectedAutomationId;
+            state.selectedAutomationId = '';
+            state.initialized = false;
+            localStorage.removeItem('velitSchedulerAutomationId');
+            const snapshot = await api('/automation');
+            render(snapshot);
+            addLog(`Saved automation "${missingId || 'default'}" was missing. Loaded "${snapshot.automation?.name || snapshot.automation?.id || 'available automation'}" instead.`, 'success');
+            return;
+          } catch (fallbackError) {
+            addLog(fallbackError.message, 'error');
+            return;
+          }
+        }
+        addLog(error.message, 'error');
+      }
+    }
+
+    async function postAction(path, success) {
+      try {
+        const snapshot = await api(automationQuery(path), { method: 'POST' });
+        render(snapshot);
+        addLog(success, 'success');
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    }
+
+    els.automationForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      try {
+        const snapshot = await api(automationQuery('/automation'), {
+          method: 'POST',
+          body: JSON.stringify({
+            name: els.automationName.value.trim(),
+            interval_hours: Number(els.intervalHours.value),
+            output_folder: els.outputFolder.value.trim(),
+            run_immediately: els.runImmediately.checked,
+            repeat_mode: els.repeatMode.checked,
+          }),
+        });
+        render(snapshot);
+        addLog('Automation settings saved.', 'success');
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    });
+
+    els.itemForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      try {
+        const item = await api(automationQuery('/items'), {
+          method: 'POST',
+          body: JSON.stringify({
+            automation_id: state.selectedAutomationId,
+            label: els.itemLabel.value.trim(),
+            location: els.itemLocation.value.trim(),
+            industry: els.itemIndustry.value.trim() || 'Van Upfitter',
+            target_count: Number(els.itemTargetCount.value),
+            target_role: els.itemTargetRole.value.trim() || 'Founder',
+            seed_query: els.itemSeedQuery.value.trim(),
+            output_folder: els.itemOutputFolder.value.trim(),
+          }),
+        });
+        els.itemForm.reset();
+        els.itemIndustry.value = 'Van Upfitter';
+        els.itemTargetCount.value = 10;
+        els.itemTargetRole.value = 'Founder';
+        addLog(`Added ${item.location} to the queue.`, 'success');
+        await loadSnapshot();
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    });
+
+    document.getElementById('start-btn').addEventListener('click', () => postAction('/automation/start', 'Automation started.'));
+    document.getElementById('pause-btn').addEventListener('click', () => postAction('/automation/pause', 'Automation paused.'));
+    document.getElementById('resume-btn').addEventListener('click', () => postAction('/automation/resume', 'Automation resumed.'));
+    document.getElementById('stop-btn').addEventListener('click', () => postAction('/automation/stop', 'Automation stopped.'));
+    document.getElementById('refresh-btn').addEventListener('click', () => loadSnapshot(true));
+    document.getElementById('refresh-timer-btn').addEventListener('click', () => resetTimer(true));
+
+    els.automationSelect.addEventListener('change', async event => {
+      state.selectedAutomationId = event.target.value || 'default';
+      localStorage.setItem('velitSchedulerAutomationId', state.selectedAutomationId);
+      state.initialized = false;
+      await loadSnapshot(true);
+    });
+
+    document.getElementById('new-automation-btn').addEventListener('click', async () => {
+      const name = prompt('Automation name', 'New Velit automation');
+      if (name === null) return;
+      try {
+        const snapshot = await api('/automations', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: name.trim() || 'New Velit automation',
+            interval_hours: Number(els.intervalHours.value) || 4,
+            output_folder: els.outputFolder.value.trim() || 'exports/velit_scheduled',
+            run_immediately: els.runImmediately.checked,
+            repeat_mode: els.repeatMode.checked,
+          }),
+        });
+        state.initialized = false;
+        render(snapshot);
+        addLog('Automation created.', 'success');
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    });
+
+    document.getElementById('delete-automation-btn').addEventListener('click', async () => {
+      const automation = state.snapshot?.automation || {};
+      if (!automation.id) return;
+      if (!confirm(`Delete automation "${automation.name || automation.id}"?`)) return;
+      try {
+        const snapshot = await api(`/automations/${encodeURIComponent(automation.id)}`, { method: 'DELETE' });
+        state.initialized = false;
+        render(snapshot);
+        addLog('Automation deleted.', 'success');
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    });
+
+    els.queueBody.addEventListener('click', async event => {
+      const button = event.target.closest('button[data-action]');
+      if (!button || !state.snapshot) return;
+      const id = button.dataset.id;
+      const action = button.dataset.action;
+      const items = state.snapshot.items || [];
+      const item = items.find(candidate => candidate.id === id);
+      if (!item) return;
+
+      try {
+        if (action === 'run') {
+          await api(`/items/${id}/run`, { method: 'POST' });
+          addLog(`Started manual run for ${item.location}.`, 'success');
+        } else if (action === 'reset') {
+          await api(`/items/${id}/reset`, { method: 'POST' });
+          addLog(`Reset ${item.location} to pending.`, 'success');
+        } else if (action === 'delete') {
+          if (!confirm(`Delete ${item.label || item.location}?`)) return;
+          await api(`/items/${id}`, { method: 'DELETE' });
+          addLog(`Deleted ${item.location}.`, 'success');
+        } else if (action === 'edit') {
+          const label = prompt('Label', item.label);
+          if (label === null) return;
+          const location = prompt('Location', item.location);
+          if (location === null) return;
+          const industry = prompt('Industry', item.industry || 'Van Upfitter');
+          if (industry === null) return;
+          const targetCount = prompt('Number of leads', item.target_count);
+          if (targetCount === null) return;
+          const targetRole = prompt('Target role', item.target_role);
+          if (targetRole === null) return;
+          const seedQuery = prompt('Seed query', item.seed_query || '');
+          if (seedQuery === null) return;
+          const outputFolder = prompt('Output folder', item.output_folder || '');
+          if (outputFolder === null) return;
+          await api(`/items/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              label,
+              location,
+              industry,
+              target_count: Number(targetCount),
+              target_role: targetRole,
+              seed_query: seedQuery,
+              output_folder: outputFolder,
+            }),
+          });
+          addLog(`Updated ${location}.`, 'success');
+        } else if (action === 'up' || action === 'down') {
+          const index = items.findIndex(candidate => candidate.id === id);
+          const targetIndex = action === 'up' ? index - 1 : index + 1;
+          if (targetIndex < 0 || targetIndex >= items.length) return;
+          const ids = items.map(candidate => candidate.id);
+          [ids[index], ids[targetIndex]] = [ids[targetIndex], ids[index]];
+          await api(automationQuery('/items/reorder'), { method: 'POST', body: JSON.stringify({ item_ids: ids }) });
+          addLog('Queue order updated.', 'success');
+        }
+        await loadSnapshot();
+      } catch (error) {
+        addLog(error.message, 'error');
+      }
+    });
+
+    async function resetTimer(showLog = false) {
+      try {
+        const snapshot = await api(automationQuery('/automation/reset-timer'), { method: 'POST' });
+        render(snapshot);
+        if (showLog) addLog('Automation timer refreshed from now.', 'success');
+        return true;
+      } catch (error) {
+        addLog(error.message, 'error');
+        return false;
+      }
+    }
+
+    async function loadInitialSnapshot() {
+      if (!state.resetAttemptedOnLoad) {
+        state.resetAttemptedOnLoad = true;
+        const loaded = await resetTimer(false);
+        if (!loaded) {
+          state.selectedAutomationId = '';
+          localStorage.removeItem('velitSchedulerAutomationId');
+          await loadSnapshot();
+        }
+        return;
+      }
+      await loadSnapshot();
+    }
+
+    loadInitialSnapshot();
+    setInterval(updateDurationTimers, 1000);
+    setInterval(() => loadSnapshot(false), 20000);
+  </script>
+</body>
+</html>

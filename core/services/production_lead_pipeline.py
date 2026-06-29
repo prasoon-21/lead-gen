@@ -58,6 +58,66 @@ BROWSER_VERIFICATION_HEADERS = {
     "Sec-Fetch-User": "?1",
 }
 
+US_STATE_TO_CODE = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "district of columbia": "DC",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
+}
+US_CODE_TO_STATE = {code: name.title() for name, code in US_STATE_TO_CODE.items()}
+STATE_CITY_OVERLAP = {"new york", "oklahoma", "kansas", "indiana", "iowa", "virginia"}
+US_STATE_PATTERN = (
+    r"AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|"
+    r"Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|District of Columbia|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming"
+)
+
 
 @dataclass
 class VerifiedTarget:
@@ -128,7 +188,7 @@ class ProductionLeadPipeline:
         target_count: int = 15,
     ) -> Dict[str, Any]: # Removed `Optional` from return type, as we will always return a dict.
         try:
-            target_count = max(1, min(int(target_count or 15), 20))
+            target_count = max(1, int(target_count or 15))
             phase_steps: List[Dict[str, Any]] = []
 
             search_results = await self._discover_targets(industry=industry, location=location, seed_query=seed_query)
@@ -644,6 +704,7 @@ class ProductionLeadPipeline:
             "linkedin_urls": [],
             "person_names": [],
             "person_titles": [],
+            "addresses": [],
             "pages": [],
             "text": "",
         }
@@ -772,6 +833,7 @@ class ProductionLeadPipeline:
             ("linkedin", "linkedin_urls"),
             ("people", "person_names"),
             ("titles", "person_titles"),
+            ("addresses", "addresses"),
             ("pages", "pages"),
         ):
             values = [str(value).strip() for value in signals.get(key) or [] if str(value).strip()]
@@ -794,7 +856,8 @@ class ProductionLeadPipeline:
         for email in cls._valid_email_matches(combined):
             if email not in signals["emails"]:
                 signals["emails"].append(email)
-        phone_summary = phone_summary_from_text(combined, source_type="contact_page", source_url=source_url)
+        cleaned_for_phones = cls._strip_phone_noise_text(combined)
+        phone_summary = phone_summary_from_text(cleaned_for_phones, source_type="contact_page", source_url=source_url)
         for phone in [phone_summary.get("contact_phone", "")] + list(phone_summary.get("alternate_phones") or []):
             if phone and phone not in signals["phones"]:
                 signals["phones"].append(phone)
@@ -807,6 +870,17 @@ class ProductionLeadPipeline:
                 signals["person_names"].append(name)
             if title and title not in signals["person_titles"]:
                 signals["person_titles"].append(title)
+        for address in cls._extract_address_signals(visible_text):
+            if address and address not in signals["addresses"]:
+                signals["addresses"].append(address)
+
+    @staticmethod
+    def _strip_phone_noise_text(text: str) -> str:
+        cleaned = re.sub(r"https?://[^\s<>\"']+", " ", text or "", flags=re.IGNORECASE)
+        cleaned = re.sub(r"\b[\w.-]+\.(?:png|jpe?g|gif|svg|webp|css|js|ico|avif)\b", " ", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"[\w-]+_\d{6,}(?:_\d{3,})+[\w-]*", " ", cleaned)
+        cleaned = re.sub(r"\b(?:data-id|data-page-id|fbid|page_id|profile_id)=[\"']?\d{8,}[\"']?", " ", cleaned, flags=re.IGNORECASE)
+        return cleaned
 
     @classmethod
     def _extract_people_from_contact_text(cls, text: str) -> List[Tuple[str, str]]:
@@ -843,6 +917,95 @@ class ProductionLeadPipeline:
                 if len(people) >= 5:
                     return people
         return people
+
+    @classmethod
+    def _extract_address_signals(cls, text: str) -> List[str]:
+        cleaned = re.sub(r"\s+", " ", text or "").strip()
+        if not cleaned:
+            return []
+        street_suffix = r"(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Boulevard|Blvd\.?|Drive|Dr\.?|Lane|Ln\.?|Court|Ct\.?|Way|Highway|Hwy\.?|Parkway|Pkwy\.?|Circle|Cir\.?|Place|Pl\.?|Trail|Trl\.?)"
+        patterns = (
+            rf"\b\d{{1,6}}\s+[A-Z0-9][A-Za-z0-9 .'\-#]{{2,80}}?\s+{street_suffix}\s*,?\s+[A-Z][A-Za-z .'\-]{{2,45}}\s*,?\s+(?:{US_STATE_PATTERN})\s+\d{{5}}(?:-\d{{4}})?",
+            rf"\b[A-Z][A-Za-z .'\-]{{2,45}}\s*,\s*(?:{US_STATE_PATTERN})\s+\d{{5}}(?:-\d{{4}})?",
+            rf"\b[A-Z][A-Za-z .'\-]{{2,45}}\s*,\s*(?:{US_STATE_PATTERN})\b",
+        )
+        values: List[str] = []
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, cleaned):
+                value = re.sub(r"\s+", " ", match.group(0)).strip(" ,.-")
+                key = value.lower()
+                if value and key not in seen:
+                    seen.add(key)
+                    values.append(value[:180])
+                if len(values) >= 8:
+                    return values
+        return values
+
+    @classmethod
+    def _extract_city_state(cls, *, text: str, location: str) -> Dict[str, str]:
+        cleaned = re.sub(r"\s+", " ", text or "").strip()
+        result = {"city": "", "state": "", "zip_code": "", "address": ""}
+        if not cleaned:
+            return result
+
+        target_state = cls._state_code_from_value(location)
+        city_pattern = r"([A-Z][A-Za-z .'\-]{1,45})"
+        state_pattern = rf"({US_STATE_PATTERN})"
+        zip_pattern = r"(\d{5}(?:-\d{4})?)"
+        patterns = (
+            rf"\b{city_pattern}\s*,\s*{state_pattern}\s+{zip_pattern}\b",
+            rf"\b{city_pattern}\s*,\s*{state_pattern}\b",
+            rf"\b(?:located|based|headquartered|serving|near|around)\s+(?:in\s+)?{city_pattern}(?:\s*,\s*|\s+){state_pattern}\b",
+            rf"\b{city_pattern}\s+{state_pattern}\s+{zip_pattern}\b",
+        )
+
+        for pattern in patterns:
+            for match in re.finditer(pattern, cleaned, re.IGNORECASE):
+                groups = match.groups()
+                if len(groups) < 2:
+                    continue
+                city = cls._clean_city_candidate(groups[0])
+                state = cls._state_code_from_value(groups[1])
+                zip_code = groups[2] if len(groups) >= 3 and re.match(r"\d{5}", str(groups[2])) else ""
+                if not city or not state:
+                    continue
+                if target_state and state != target_state:
+                    continue
+                result.update({"city": city, "state": state, "zip_code": zip_code, "address": match.group(0).strip()[:180]})
+                return result
+
+        if target_state:
+            phrase_pattern = rf"\b(?:located|based|serving|near|around|in)\s+(?:the\s+)?{city_pattern}\b"
+            for match in re.finditer(phrase_pattern, cleaned):
+                city = cls._clean_city_candidate(match.group(1))
+                if city:
+                    result.update({"city": city, "state": target_state, "zip_code": "", "address": ""})
+                    return result
+        return result
+
+    @staticmethod
+    def _state_code_from_value(value: Any) -> str:
+        cleaned = re.sub(r"[^A-Za-z ]+", " ", str(value or "")).strip().lower()
+        if not cleaned:
+            return ""
+        if len(cleaned) == 2 and cleaned.upper() in US_CODE_TO_STATE:
+            return cleaned.upper()
+        return US_STATE_TO_CODE.get(cleaned, "")
+
+    @classmethod
+    def _clean_city_candidate(cls, value: Any) -> str:
+        city = re.sub(r"[^A-Za-z .'\-]+", " ", str(value or "")).strip(" ,.-")
+        city = re.sub(r"^(?:serving|located|based|headquartered|near|around|in)\s+", "", city, flags=re.IGNORECASE)
+        city = re.sub(r"\s+", " ", city)
+        if not city or len(city) < 2 or len(city) > 45:
+            return ""
+        lowered = city.lower()
+        if (lowered in US_STATE_TO_CODE and lowered not in STATE_CITY_OVERLAP) or lowered in {"contact", "address", "location", "office", "home", "services", "phone"}:
+            return ""
+        if re.search(r"\b(?:upfitter|conversion|vehicle|fleet|truck|van|builder|dealer|service|website)\b", lowered):
+            return ""
+        return " ".join(part.capitalize() if part.islower() else part for part in city.split())
 
     @staticmethod
     def _html_to_text(html: str) -> str:
@@ -1018,10 +1181,24 @@ class ProductionLeadPipeline:
 
         score_10 = self._coerce_score_10(ai_score.get("qualification_score", 0))
         summary = str(ai_score.get("value_proposition") or ai_score.get("summary") or "").strip()
+        phone_summary = phone_summary_from_text(text, source_type="tavily_extract", source_url=url)
+        scraped_phone_summary = build_phone_summary(
+            phone_candidates_from_values(
+                list(contact_signals.get("phones") or []) + [ai_score.get("contact_phone")],
+                source_type="contact_page",
+                source_url=url,
+            )
+        )
+        contact_email = self._first_non_empty(
+            *(contact_signals.get("emails") or [])[:1],
+            ai_score.get("contact_email"),
+            self._first_valid_email(text),
+        )
         company_name = self._resolve_company_name(
             str(ai_score.get("company_name") or item.get("company_name") or "").strip(),
             title=title,
             url=url,
+            email=contact_email,
         )
         directory_url = str(item.get("directory_url") or "").strip()
         if not self._looks_like_valid_company_name(company_name):
@@ -1041,19 +1218,6 @@ class ProductionLeadPipeline:
             industry=industry,
             location=location,
         )
-        phone_summary = phone_summary_from_text(text, source_type="tavily_extract", source_url=url)
-        scraped_phone_summary = build_phone_summary(
-            phone_candidates_from_values(
-                list(contact_signals.get("phones") or []) + [ai_score.get("contact_phone")],
-                source_type="contact_page",
-                source_url=url,
-            )
-        )
-        contact_email = self._first_non_empty(
-            *(contact_signals.get("emails") or [])[:1],
-            ai_score.get("contact_email"),
-            self._first_valid_email(text),
-        )
         person_name = self._first_non_empty(
             *(contact_signals.get("person_names") or [])[:1],
             ai_score.get("person_name"),
@@ -1070,12 +1234,32 @@ class ProductionLeadPipeline:
             ai_score.get("linkedin_url"),
             self._first_linkedin_url(text),
         )
+        location_evidence = self._location_evidence_excerpt(text=f"{title}\n{text}", location=location)
+        city_state_text_parts = []
+        if ai_score.get("city"):
+            city_state_text_parts.append(
+                " ".join(
+                    str(value or "").strip()
+                    for value in (ai_score.get("city"), ai_score.get("state") or location, ai_score.get("zip_code"))
+                    if str(value or "").strip()
+                )
+            )
+        city_state_text_parts.extend(str(value) for value in contact_signals.get("addresses") or [])
+        city_state_text_parts.extend([location_evidence, title, text])
+        city_state = self._extract_city_state(
+            text="\n".join(part for part in city_state_text_parts if part),
+            location=location,
+        )
         lead = {
             "company_name": company_name,
             "company_website": url,
             "industry": industry or "General",
             "location": location or "",
-            "location_evidence": self._location_evidence_excerpt(text=f"{title}\n{text}", location=location),
+            "location_evidence": location_evidence,
+            "city": city_state.get("city", ""),
+            "state": city_state.get("state", ""),
+            "zip_code": city_state.get("zip_code", ""),
+            "address": city_state.get("address", ""),
             "value_proposition": summary,
             "lead_summary": "",
             "company_size": "",
@@ -1326,6 +1510,7 @@ class ProductionLeadPipeline:
                     "Use only details supported by the supplied text.",
                     "Extract obfuscated emails such as name [at] company [dot] com when clear.",
                     "Prefer founders, CEOs, owners, presidents, directors, or managing directors as person contacts.",
+                    "Extract city, state, and zip_code only when supported by address/location evidence in the text.",
                     "Use qualification_score from 0 to 10.",
                 ],
                 "output_schema": {
@@ -1340,6 +1525,9 @@ class ProductionLeadPipeline:
                             "person_name": "string",
                             "person_title": "string",
                             "linkedin_url": "string",
+                            "city": "string",
+                            "state": "string",
+                            "zip_code": "string",
                         }
                     ]
                 },
@@ -1492,10 +1680,60 @@ class ProductionLeadPipeline:
             return max(scored, key=lambda item: (item[0], len(item[1])))[1]
         return domain_name
 
+    @staticmethod
+    def _generic_email_domains() -> set[str]:
+        return {
+            "gmail.com",
+            "googlemail.com",
+            "yahoo.com",
+            "hotmail.com",
+            "outlook.com",
+            "live.com",
+            "icloud.com",
+            "aol.com",
+            "proton.me",
+            "protonmail.com",
+            "msn.com",
+            "comcast.net",
+            "verizon.net",
+            "att.net",
+            "sbcglobal.net",
+        }
+
     @classmethod
-    def _resolve_company_name(cls, value: str, *, title: str, url: str) -> str:
+    def _company_name_from_email(cls, email: str) -> str:
+        cleaned = str(email or "").strip().lower()
+        if "@" not in cleaned:
+            return ""
+        domain = cleaned.rsplit("@", 1)[-1].strip()
+        if not domain or domain in cls._generic_email_domains():
+            return ""
+        parts = [part for part in domain.split(".") if part]
+        if not parts:
+            return ""
+        label = parts[-2] if len(parts) >= 2 and parts[-1] in {"com", "net", "org", "io", "co", "us", "biz"} else parts[0]
+        return cls._pretty_company_name_from_domain_label(label)
+
+    @classmethod
+    def _resolve_company_name(cls, value: str, *, title: str, url: str, email: str = "") -> str:
         current = cls._clean_company_candidate(value)
         resolved = cls._clean_company_candidate(cls._company_name_from_title_or_url(title, url))
+        email_name = cls._clean_company_candidate(cls._company_name_from_email(email))
+        url_domain = (urlparse(url or "").hostname or "").lower()
+        if url_domain.startswith("www."):
+            url_domain = url_domain[4:]
+        email_domain = str(email or "").strip().lower().rsplit("@", 1)[-1] if "@" in str(email or "") else ""
+        email_domain_matches_url = bool(email_domain and url_domain and (email_domain == url_domain or email_domain.endswith(f".{url_domain}") or url_domain.endswith(f".{email_domain}")))
+
+        candidates: List[Tuple[int, str]] = []
+        if cls._looks_like_valid_company_name(current):
+            candidates.append((4, current))
+        if cls._looks_like_valid_company_name(resolved):
+            candidates.append((5 if resolved and any(token in url_domain for token in cls._company_name_tokens(resolved)[:2]) else 3, resolved))
+        if cls._looks_like_valid_company_name(email_name):
+            candidates.append((7 if email_domain_matches_url else 5, email_name))
+        if candidates:
+            return max(candidates, key=lambda item: (item[0], len(item[1])))[1]
         if not cls._looks_like_valid_company_name(current):
             return resolved or cls._company_name_from_url(url)
         if not cls._looks_like_valid_company_name(resolved):
@@ -1510,6 +1748,74 @@ class ProductionLeadPipeline:
     @staticmethod
     def _company_name_tokens(value: str) -> List[str]:
         return re.findall(r"[a-z0-9]+", value.lower())
+
+    @classmethod
+    def _pretty_company_name_from_domain_label(cls, label: str) -> str:
+        label = re.sub(r"([a-z])([A-Z])", r"\1 \2", str(label or ""))
+        label = label.replace("-", " ").replace("_", " ").strip()
+        if not label:
+            return "Unknown Company"
+        if " " not in label:
+            words = (
+                "upfitters",
+                "upfitter",
+                "outfitters",
+                "interiors",
+                "conversion",
+                "conversions",
+                "services",
+                "service",
+                "solutions",
+                "systems",
+                "designs",
+                "design",
+                "automotive",
+                "motors",
+                "media",
+                "digital",
+                "agency",
+                "group",
+                "studio",
+                "studios",
+                "labs",
+                "tech",
+                "trailers",
+                "trailer",
+                "trucks",
+                "truck",
+                "campervans",
+                "campers",
+                "camper",
+                "vans",
+                "van",
+                "customs",
+                "custom",
+                "adventure",
+                "offroad",
+                "homes",
+                "auto",
+                "rv",
+            )
+            remaining = label.lower()
+            suffixes: List[str] = []
+            while remaining:
+                suffix = next(
+                    (
+                        word
+                        for word in sorted(words, key=len, reverse=True)
+                        if len(remaining) > len(word) and remaining.endswith(word)
+                    ),
+                    "",
+                )
+                if not suffix:
+                    break
+                suffixes.insert(0, suffix)
+                remaining = remaining[: -len(suffix)]
+            label = " ".join(([remaining] if remaining else []) + suffixes)
+        tokens = [token for token in re.split(r"\s+", label) if token]
+        acronym_tokens = {"abc", "rv", "usa", "us", "ak", "pa", "ny", "la", "4x4"}
+        pretty_tokens = [token.upper() if token.lower() in acronym_tokens else token.capitalize() for token in tokens]
+        return " ".join(pretty_tokens) if pretty_tokens else "Unknown Company"
 
     @staticmethod
     def _is_generic_company_title(value: str) -> bool:
@@ -1550,71 +1856,14 @@ class ProductionLeadPipeline:
             )
         )
 
-    @staticmethod
-    def _company_name_from_url(url: str) -> str:
-        host = (urlparse(url or "").hostname or "").lower()
+    @classmethod
+    def _company_name_from_url(cls, url: str) -> str:
+        parsed = urlparse(url or "")
+        host = (parsed.hostname or "").lower()
         if host.startswith("www."):
             host = host[4:]
-        label = host.split(".")[0].replace("-", " ").replace("_", " ").strip()
-        if not label:
-            return "Unknown Company"
-        if " " not in label:
-            words = (
-                "upfitters",
-                "upfitter",
-                "outfitters",
-                "interiors",
-                "conversion",
-                "conversions",
-                "trailers",
-                "trailer",
-                "trucks",
-                "truck",
-                "campervans",
-                "campers",
-                "camper",
-                "quest",
-                "vans",
-                "van",
-                "motors",
-                "auto",
-                "autos",
-                "coach",
-                "coaches",
-                "designs",
-                "design",
-                "customs",
-                "custom",
-                "adventure",
-                "offroad",
-                "coast",
-                "life",
-                "solutions",
-                "systems",
-                "homes",
-                "rv",
-                "ak",
-            )
-            remaining = label
-            suffixes: List[str] = []
-            while remaining:
-                suffix = next(
-                    (
-                        word
-                        for word in sorted(words, key=len, reverse=True)
-                        if len(remaining) > len(word) and remaining.endswith(word)
-                    ),
-                    "",
-                )
-                if not suffix:
-                    break
-                suffixes.insert(0, suffix)
-                remaining = remaining[: -len(suffix)]
-            label = " ".join(([remaining] if remaining else []) + suffixes)
-        tokens = [token for token in re.split(r"\s+", label) if token]
-        acronym_tokens = {"abc", "rv", "usa", "us", "ak", "4x4"}
-        pretty_tokens = [token.upper() if token.lower() in acronym_tokens else token.capitalize() for token in tokens]
-        return " ".join(pretty_tokens) if pretty_tokens else "Unknown Company"
+        label = host.split(".")[0]
+        return cls._pretty_company_name_from_domain_label(label)
 
     @classmethod
     def _company_name_from_directory_item(cls, item: Dict[str, Any]) -> str:

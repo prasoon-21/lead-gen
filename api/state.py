@@ -40,6 +40,9 @@ class AppState:
     # businesses/{FIRESTORE_BUSINESS_ID}/agent_directory
     directory_store: Optional[object] = None
 
+    # Local in-process Velit multi-location batch scheduler
+    velit_batch_scheduler: Optional[object] = None
+
 
 state = AppState()
 

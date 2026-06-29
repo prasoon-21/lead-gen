@@ -67,8 +67,16 @@ def _digits(value: str) -> str:
     return re.sub(r"\D", "", value or "")
 
 
+def _strip_leading_zip_code(raw: str) -> str:
+    return re.sub(
+        r"^\s*\d{5}(?:-\d{4})?\s+(?=(?:\+?1[\s().-]*)?\(?\d{3}\)?)",
+        "",
+        raw or "",
+    ).strip()
+
+
 def _clean_raw_phone(value: Any) -> str:
-    text = unquote(str(value or "")).strip()
+    text = _strip_leading_zip_code(unquote(str(value or "")).strip())
     text = re.sub(r"^(?:tel:|phone:)", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"[^\d+xextEXT().\-\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
@@ -76,10 +84,15 @@ def _clean_raw_phone(value: Any) -> str:
 
 def _looks_bad_before_parse(raw: str, context: str = "") -> bool:
     cleaned = _clean_raw_phone(raw)
-    digits = _digits(cleaned)
+    base_text = re.split(r"\b(?:x|ext\.?|extension)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    digits = _digits(base_text)
     if cleaned.lower() in EMPTY_PHONE_VALUES:
         return True
-    if len(digits) < 10 or len(digits) > 16:
+    if len(digits) < 10:
+        return True
+    if len(digits) > 11 and not re.match(r"^\+\s*(?!1\b)\d", cleaned):
+        return True
+    if re.search(r"\d{15,}", str(raw or "")):
         return True
     if len(set(digits[-10:])) <= 2:
         return True
@@ -97,6 +110,10 @@ def _looks_bad_before_parse(raw: str, context: str = "") -> bool:
         return True
     lowered_context = (context or "").lower()
     has_positive_context = any(word in lowered_context for word in POSITIVE_CONTEXT_WORDS)
+    if re.search(r"(?:https?://|src=|href=|url\(|data-id=|fbid|page_id|profile_id|facebook\.com|instagram\.com|cdn)", lowered_context):
+        return True
+    if re.search(r"\.(?:png|jpe?g|gif|svg|webp|css|js|ico|avif)\b|[\w-]+_\d{6,}(?:_\d{3,})+", lowered_context):
+        return True
     if "fax" in lowered_context and not has_positive_context:
         return True
     return any(word in lowered_context for word in BAD_CONTEXT_WORDS) and not has_positive_context
@@ -177,6 +194,29 @@ def _fallback_phone_candidate(
 
 def _context_window(text: str, start: int, end: int, size: int = 60) -> str:
     return (text or "")[max(0, start - size) : min(len(text or ""), end + size)]
+
+
+def _match_is_inside_noise(text: str, match: re.Match[str]) -> bool:
+    body = text or ""
+    start, end = match.start(), match.end()
+    prefix = body[max(0, start - 200) : start]
+    suffix = body[end : min(len(body), end + 120)]
+    context = f"{prefix}{match.group(0)}{suffix}"
+    if re.search(r"(?:https?://|src=|href=|url\(|data-id=|fbid|page_id|profile_id)[^\s<>\"']*$", prefix, re.IGNORECASE):
+        return True
+    if re.search(r"\.(?:png|jpe?g|gif|svg|webp|css|js|ico|avif)[^\s<>\"']*$", prefix, re.IGNORECASE):
+        return True
+    if re.search(r"[\w-]+_\d{6,}(?:_\d{3,})*", prefix):
+        return True
+    if re.search(r"(?:facebook|instagram|cdn|static|assets?|images?)[^\s<>\"']*\d{8,}", context, re.IGNORECASE):
+        return True
+    stripped_candidate_digits = _digits(_strip_leading_zip_code(match.group(0)))
+    if len(stripped_candidate_digits) in {10, 11}:
+        return False
+    digit_context = re.sub(r"\D", "", context)
+    if len(digit_context) >= 15 and not any(word in context.lower() for word in POSITIVE_CONTEXT_WORDS):
+        return True
+    return False
 
 
 def normalize_phone_candidate(
@@ -269,6 +309,8 @@ def extract_phone_candidates(
             candidates.append(candidate)
 
     for match in PHONE_TEXT_PATTERN.finditer(body):
+        if _match_is_inside_noise(body, match):
+            continue
         raw = match.group(0)
         if raw in seen_raw:
             continue

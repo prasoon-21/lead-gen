@@ -12,8 +12,10 @@ from api.state import state
 from api.routes import (
     health, learning, image, blocks, agent,
     campus_learning_agent, agent_kernel, workflow,
-    admin, agent_directory, studio, leads, email_verification
+    admin, agent_directory, studio, leads, email_verification,
+    velit_batch_scheduler,
 )
+from api.routes._test_features import hunter_search as hunter_search_route  # TEST FEATURE
 from core.adapters.router import build_adapter_from_env
 from core.retrieval.embeddings import EmbeddingService
 from core.logging.tracker import TokenTracker
@@ -24,6 +26,7 @@ from core.agents.factory import AgentFactory
 from core.orchestration.engine import WorkflowEngine
 from core.orchestration.node_registry import build_default_node_registry
 from core.services.todo_sheet_store import TodoSheetStore
+from core.services.velit.batch_scheduler import VelitBatchScheduler
 
 load_dotenv()
 setup_runtime_logging()
@@ -147,8 +150,15 @@ async def lifespan(app: FastAPI):
         token_tracker=state.token_tracker,
     )
 
+    # Local Velit multi-location queue scheduler. It runs only while this
+    # FastAPI process is alive and persists queue state to data/*.json.
+    state.velit_batch_scheduler = VelitBatchScheduler()
+    await state.velit_batch_scheduler.start_runtime()
+
     print("Agentic Core initialised")
     yield
+    if state.velit_batch_scheduler:
+        await state.velit_batch_scheduler.stop_runtime()
     print("Agentic Core shutting down")
 
 
@@ -195,6 +205,16 @@ async def email_verifier_page():
     return FileResponse("ui/email_verifier.html")
 
 
+@app.get("/velit-batch-scheduler", include_in_schema=False)
+async def velit_batch_scheduler_page():
+    return FileResponse("ui/velit_batch_scheduler.html")
+
+
+@app.get("/hunter-search", include_in_schema=False)  # TEST FEATURE
+async def hunter_search_page():
+    return FileResponse("ui/hunter_search.html")
+
+
 app.include_router(health.router,                                              tags=["Health"])
 app.include_router(learning.router,          prefix="/api/learning/chat",     tags=["Learning"])
 app.include_router(image.router,             prefix="/api/image",             tags=["Image"])
@@ -208,3 +228,5 @@ app.include_router(agent_directory.router,   prefix="/api/directory",         ta
 app.include_router(studio.router,            prefix="/api/studio",            tags=["Studio"])
 app.include_router(leads.router,             prefix="/api/leads",             tags=["Leads"])
 app.include_router(email_verification.router, prefix="/api/email-verification", tags=["Email Verification"])
+app.include_router(velit_batch_scheduler.router, prefix="/api/velit-batch", tags=["Velit Batch Scheduler"])
+app.include_router(hunter_search_route.router, prefix="/api/hunter", tags=["Hunter Search (Test)"])  # TEST FEATURE

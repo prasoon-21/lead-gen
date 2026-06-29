@@ -20,6 +20,18 @@ def _bearer_token(authorization: Optional[str]) -> str:
     return value[7:].strip()
 
 
+def _host_name(host: str) -> str:
+    value = _clean(host).lower()
+    if value.startswith("[") and "]" in value:
+        return value[1 : value.index("]")]
+    return value.split(":", 1)[0]
+
+
+def _is_local_host(host: str) -> bool:
+    value = _host_name(host)
+    return value in {"localhost", "127.0.0.1", "::1"} or value.endswith(".localhost")
+
+
 def is_valid_api_key(
     configured_key: Optional[str],
     header_value: Optional[str],
@@ -46,13 +58,25 @@ async def api_key_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    if not request.url.path.startswith("/api/"):
+    path = request.url.path
+    if not path.startswith("/api/"):
         return await call_next(request)
 
     # Exempt internal UI calls (same-origin check)
     referer = request.headers.get("referer", "")
+    origin = request.headers.get("origin", "")
     host = request.headers.get("host", "")
-    if referer and host and host in referer:
+    sec_fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    if host and (
+        (referer and host in referer)
+        or (origin and host in origin)
+        or sec_fetch_site in {"same-origin", "same-site"}
+    ):
+        return await call_next(request)
+
+    # The Velit scheduler is a local browser control panel. Allow it on
+    # localhost so opening the HTML file directly can still reach the API.
+    if path.startswith("/api/velit-batch") and _is_local_host(host):
         return await call_next(request)
 
     header_name = os.getenv("AGENTIC_CORE_API_KEY_HEADER", DEFAULT_API_KEY_HEADER)

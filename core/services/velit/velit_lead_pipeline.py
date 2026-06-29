@@ -18,6 +18,7 @@ from core.services.production_lead_pipeline import (
 from core.services.velit.discovery import (
     VELIT_EXTRACT_DEPTH,
     VELIT_SEARCH_DEPTH,
+    build_velit_shortfall_queries,
     build_velit_queries,
     is_noise_url,
     looks_like_velit_text,
@@ -83,6 +84,18 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             minimum=1,
             maximum=8,
         )
+        self.shortfall_max_passes = self._bounded_int_env(
+            "VELIT_SHORTFALL_MAX_PASSES",
+            default=3,
+            minimum=0,
+            maximum=3,
+        )
+        self.shortfall_extra_query_limit = self._bounded_int_env(
+            "VELIT_SHORTFALL_MAX_EXTRA_QUERIES",
+            default=12,
+            minimum=0,
+            maximum=30,
+        )
         self.max_contact_scrapes = self._bounded_int_env(
             "VELIT_CONTACT_SCRAPE_LIMIT",
             default=24,
@@ -113,6 +126,15 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             minimum=0,
             maximum=30,
         )
+        self._partial_result: Dict[str, Any] = {
+            "leads": [],
+            "steps": [],
+            "metadata": {
+                "pipeline": "velit_specialized_pipeline",
+                "status": "not_started",
+                "partial_result": True,
+            },
+        }
 
     async def run(
         self,
@@ -125,47 +147,127 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         target_count = max(1, min(int(target_count or 15), 100))
         location = normalize_velit_location(location)
         phase_steps: List[Dict[str, Any]] = []
+        self._store_partial_result(
+            leads=[],
+            steps=phase_steps,
+            stage="started",
+            metadata={"location": location, "target_count": target_count},
+        )
         try:
-            search_results = await self._discover_targets(industry=industry, location=location, seed_query=seed_query)
+            discovery_status = "completed"
+            try:
+                search_results = await asyncio.wait_for(
+                    self._discover_targets(industry=industry, location=location, seed_query=seed_query),
+                    timeout=self._phase_timeout_seconds("discovery", 60),
+                )
+            except asyncio.TimeoutError:
+                search_results = []
+                discovery_status = "timeout"
             phase_steps.append(
                 {
                     "step": 1,
                     "stage": "velit_direct_discovery",
                     "type": "tavily_search",
+                    "status": discovery_status,
                     "search_depth": VELIT_SEARCH_DEPTH,
                     "query_count": len(build_velit_queries(location=location, seed_query=seed_query, max_queries=self.discovery_query_limit)),
                     "result_count": len(search_results),
                 }
             )
-
-            corporate_targets = await self._resolve_corporate_targets(
+            self._store_emergency_partial_from_items(
                 search_results,
-                industry=industry,
+                steps=phase_steps,
+                stage="discovery_emergency_ready",
+                industry=industry or "Upfitter",
                 location=location,
-                limit=max(24, target_count * 2),
+                target_count=target_count,
             )
+
+            resolution_status = "completed"
+            try:
+                corporate_targets = await asyncio.wait_for(
+                    self._resolve_corporate_targets(
+                        search_results,
+                        industry=industry,
+                        location=location,
+                        limit=max(24, target_count * 2),
+                    ),
+                    timeout=self._phase_timeout_seconds("site_resolution", 120),
+                )
+            except asyncio.TimeoutError:
+                corporate_targets = []
+                resolution_status = "timeout"
             phase_steps.append(
                 {
                     "step": 2,
                     "stage": "velit_site_resolution",
                     "type": "direct_site_resolution",
+                    "status": resolution_status,
                     "input_count": len(search_results),
                     "result_count": len(corporate_targets),
                 }
             )
+            self._store_emergency_partial_from_items(
+                corporate_targets or search_results,
+                steps=phase_steps,
+                stage="site_resolution_emergency_ready",
+                industry=industry or "Upfitter",
+                location=location,
+                target_count=target_count,
+            )
 
-            verified = await self._verify_targets(corporate_targets, limit=max(24, target_count * 2))
+            verification_status = "completed"
+            try:
+                verified = await asyncio.wait_for(
+                    self._verify_targets(corporate_targets, limit=max(24, target_count * 2)),
+                    timeout=self._phase_timeout_seconds("site_verification", 120),
+                )
+            except asyncio.TimeoutError:
+                verified = []
+                verification_status = "timeout"
             phase_steps.append(
                 {
                     "step": 3,
                     "stage": "velit_site_verification",
                     "type": "async_http_verification",
+                    "status": verification_status,
                     "input_count": len(corporate_targets),
                     "result_count": len(verified),
                 }
             )
+            self._store_emergency_partial_from_items(
+                verified or corporate_targets or search_results,
+                steps=phase_steps,
+                stage="site_verification_emergency_ready",
+                industry=industry or "Upfitter",
+                location=location,
+                target_count=target_count,
+            )
 
-            extracted = await self._extract_targets(verified)
+            extraction_status = "completed"
+            try:
+                extracted = await asyncio.wait_for(
+                    self._extract_targets(verified),
+                    timeout=self._phase_timeout_seconds("extraction", 180),
+                )
+            except asyncio.TimeoutError:
+                extracted = []
+                extraction_status = "timeout"
+            preliminary_leads = self._build_backfill_leads_from_extracted(
+                extracted,
+                existing_leads=[],
+                industry=industry or "Upfitter",
+                location=location,
+                target_count=target_count,
+            )
+            preliminary_leads = self._sanitize_outreach_leads(preliminary_leads, location=location, target_count=target_count)
+            if preliminary_leads:
+                self._store_partial_result(
+                    leads=preliminary_leads,
+                    steps=phase_steps,
+                    stage="extraction_backfill_ready",
+                    metadata={"extracted_targets": len(extracted), "extraction_status": extraction_status},
+                )
             score_pool_size = min(
                 max(target_count * 2, target_count + 12),
                 max(target_count, len(extracted)),
@@ -188,43 +290,106 @@ class VelitLeadPipeline(ProductionLeadPipeline):
             )
             leads.sort(key=self._velit_rank_key, reverse=True)
             leads = leads[:score_pool_size]
+            self._store_partial_result(
+                leads=leads[:target_count],
+                steps=phase_steps,
+                stage="scored_leads_ready",
+                metadata={"extracted_targets": len(extracted), "score_pool_size": score_pool_size},
+            )
             leads = await self._enrich_leads_with_linkedin(
                 leads,
                 industry=industry or "Upfitter",
                 location=location,
+            )
+            self._store_partial_result(
+                leads=leads[:target_count],
+                steps=phase_steps,
+                stage="linkedin_enrichment_complete",
+                metadata={"extracted_targets": len(extracted), "score_pool_size": score_pool_size},
             )
             leads = await self._recover_missing_contacts(
                 leads,
                 industry=industry or "Upfitter",
                 location=location,
             )
+            self._store_partial_result(
+                leads=leads[:target_count],
+                steps=phase_steps,
+                stage="contact_recovery_complete",
+                metadata={"extracted_targets": len(extracted), "score_pool_size": score_pool_size},
+            )
             leads = self._sanitize_outreach_leads(leads, location=location)
             leads, quality_gate_stats = apply_quality_gate(leads, drop_rejected=True)
             leads = leads[:target_count]
+            initial_lead_count = len(leads)
+            initial_quality_gate_stats = quality_gate_stats
             phase_steps.append(
                 {
                     "step": 4,
                     "stage": "velit_enrichment_scoring",
                     "type": "site_scraping_gemini_linkedin",
+                    "status": extraction_status,
                     "extract_depth": VELIT_EXTRACT_DEPTH,
                     "input_count": len(verified),
                     "lead_count": len(leads),
                     "model": self.gemini_model,
                 }
             )
+            self._store_partial_result(
+                leads=leads,
+                steps=phase_steps,
+                stage="quality_gate_complete",
+                metadata={
+                    "extracted_targets": len(extracted),
+                    "score_pool_size": score_pool_size,
+                    "quality_gate": quality_gate_stats,
+                },
+            )
+            shortfall_stats = self._empty_shortfall_stats(initial_lead_count, target_count=target_count)
+            shortfall_steps: List[Dict[str, Any]] = []
+            if len(leads) < target_count:
+                leads, shortfall_stats, quality_gate_stats, shortfall_steps = await self._run_shortfall_passes(
+                    leads=leads,
+                    industry=industry or "Upfitter",
+                    location=location,
+                    seed_query=seed_query,
+                    target_count=target_count,
+                    seen_urls=self._urls_from_items(search_results, corporate_targets, verified),
+                    seen_domains=self._domains_from_items(corporate_targets, verified) | self._domains_from_leads(leads),
+                    initial_quality_gate_stats=quality_gate_stats,
+                )
+                phase_steps.extend(shortfall_steps)
 
-            return {
+            returned_emergency_partial = False
+            if not leads and self._partial_result.get("leads"):
+                leads = [
+                    dict(lead)
+                    for lead in (self._partial_result.get("leads") or [])[:target_count]
+                    if isinstance(lead, dict)
+                ]
+                quality_gate_stats = dict(quality_gate_stats or {})
+                quality_gate_stats["returned_emergency_partial"] = True
+                returned_emergency_partial = True
+
+            result = {
                 "leads": leads,
                 "steps": phase_steps,
                 "metadata": {
                     "pipeline": "velit_specialized_pipeline",
                     "search_depth": VELIT_SEARCH_DEPTH,
                     "extract_depth": VELIT_EXTRACT_DEPTH,
-                    "discovered_targets": len(search_results),
-                    "corporate_targets": len(corporate_targets),
-                    "verified_targets": len(verified),
+                    "discovered_targets": len(search_results) + int(shortfall_stats.get("extra_discovered_targets") or 0),
+                    "corporate_targets": len(corporate_targets) + int(shortfall_stats.get("extra_corporate_targets") or 0),
+                    "verified_targets": len(verified) + int(shortfall_stats.get("extra_verified_targets") or 0),
                     "scored_targets": len(leads),
+                    "initial_lead_count": initial_lead_count,
                     "quality_gate": quality_gate_stats,
+                    "initial_quality_gate": initial_quality_gate_stats,
+                    "returned_emergency_partial": returned_emergency_partial,
+                    "shortfall_passes_used": shortfall_stats.get("passes_used", 0),
+                    "shortfall_extra_discovered_targets": shortfall_stats.get("extra_discovered_targets", 0),
+                    "shortfall_stop_reason": shortfall_stats.get("stop_reason", "no_shortfall"),
+                    "shortfall": shortfall_stats,
                     "linkedin_enriched_targets": sum(
                         1 for lead in leads if lead.get("contact_person_name") or lead.get("founder_name")
                     ),
@@ -233,11 +398,27 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                     "contact_search_limit": self.contact_search_limit,
                     "contact_queries_per_company": self.contact_queries_per_company,
                     "discovery_query_limit": self.discovery_query_limit,
+                    "shortfall_max_passes": self.shortfall_max_passes,
+                    "shortfall_extra_query_limit": self.shortfall_extra_query_limit,
                     "gemini_max_calls_per_run": self.gemini_max_calls_per_run,
                 },
             }
+            self._store_partial_result(
+                leads=leads,
+                steps=phase_steps,
+                stage="complete",
+                metadata={**result["metadata"], "status": "completed", "partial_result": False},
+            )
+            return result
         except Exception as exc:
             self.logger.error("velit_pipeline_run_failed", extra={"payload": str(exc), "stacktrace": True})
+            partial = self.get_partial_result(
+                error=f"Internal Server Error during Velit lead generation: {exc}",
+                status="failed_partial" if self._partial_result.get("leads") else "failed",
+            )
+            if partial.get("leads"):
+                partial["metadata"]["error_type"] = type(exc).__name__
+                return partial
             return {
                 "leads": [],
                 "steps": phase_steps,
@@ -249,9 +430,415 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 },
             }
 
-    async def _discover_targets(self, *, industry: str, location: str, seed_query: str) -> List[Dict[str, Any]]:
-        queries = build_velit_queries(location=location, seed_query=seed_query, max_queries=self.discovery_query_limit)
-        seen_urls = set()
+    def _store_emergency_partial_from_items(
+        self,
+        items: Iterable[Any],
+        *,
+        steps: List[Dict[str, Any]],
+        stage: str,
+        industry: str,
+        location: str,
+        target_count: int,
+    ) -> None:
+        item_list = list(items or [])
+        leads = self._build_emergency_leads_from_discovery(
+            item_list,
+            industry=industry,
+            location=location,
+            target_count=target_count,
+            source_stage=stage,
+        )
+        if leads:
+            self._store_partial_result(
+                leads=leads,
+                steps=steps,
+                stage=stage,
+                metadata={"emergency_partial": True, "emergency_source_count": len(item_list)},
+            )
+
+    def _build_emergency_leads_from_discovery(
+        self,
+        items: Iterable[Any],
+        *,
+        industry: str,
+        location: str,
+        target_count: int,
+        source_stage: str,
+    ) -> List[Dict[str, Any]]:
+        leads: List[Dict[str, Any]] = []
+        seen_domains: set[str] = set()
+        for raw in items or []:
+            item = self._emergency_item_to_dict(raw)
+            url = self._first_non_empty(item.get("url"), item.get("company_website"), item.get("contact_page"))
+            if not url or is_noise_url(url):
+                continue
+            domain = normalize_domain(url)
+            if domain and domain in seen_domains:
+                continue
+            title = self._first_non_empty(item.get("title"), item.get("company_name"))
+            content = self._first_non_empty(item.get("content"), item.get("raw_content"), item.get("snippet"))
+            company_name = self._clean_company_candidate(
+                self._resolve_company_name(str(item.get("company_name") or ""), title=title, url=url)
+            )
+            if not self._looks_like_valid_company_name(company_name):
+                continue
+            signals = item.get("contact_signals") if isinstance(item.get("contact_signals"), dict) else {}
+            signal_text = json.dumps(signals, default=str) if signals else ""
+            combined_text = "\n".join(part for part in (title, content, signal_text) if part)
+            if not looks_like_velit_text(f"{combined_text} {company_name} {url}"):
+                continue
+            email = self._pick_best_email(
+                existing=self._first_valid_email(combined_text),
+                candidates=list(signals.get("emails") or []),
+                website_domain=domain,
+            )
+            phone_summary = phone_summary_from_text(combined_text, source_type="emergency_partial", source_url=url)
+            lead = {
+                "company_name": company_name,
+                "company_website": self._homepage_url(url),
+                "industry": industry or "Upfitter",
+                "location": location or "",
+                "location_evidence": self._location_evidence_excerpt(text=combined_text, location=location),
+                "value_proposition": self._fallback_value_proposition(
+                    company_name=company_name,
+                    text=combined_text,
+                    industry=industry,
+                    location=location,
+                ),
+                "lead_summary": "",
+                "contact_person_name": "",
+                "founder_name": "",
+                "contact_person_title": "",
+                "contact_email": email,
+                "contact_phone": self._first_non_empty(phone_summary.get("contact_phone")),
+                "phone_validation_status": self._first_non_empty(phone_summary.get("phone_validation_status")),
+                "phone_type": self._first_non_empty(phone_summary.get("phone_type")),
+                "company_linkedin_url": self._first_non_empty(*(signals.get("linkedin") or signals.get("linkedin_urls") or [])),
+                "linkedin_url": "",
+                "contact_page": url,
+                "source": "emergency_partial",
+                "source_details": [
+                    {
+                        "stage": source_stage,
+                        "type": "emergency_partial_lead",
+                        "provider": "local_rules",
+                        "url": url,
+                        "title": title,
+                    }
+                ],
+            }
+            quality = score_lead(lead)
+            lead.update({key: value for key, value in quality.items() if key != "quality_score"})
+            lead["quality_score"] = max(0, min(int(quality.get("quality_score") or 0), 100))
+            lead["lead_summary"] = build_plain_lead_summary(lead)
+            if domain:
+                seen_domains.add(domain)
+            leads.append(lead)
+            if len(leads) >= max(1, target_count):
+                break
+        leads = self._sanitize_outreach_leads(leads, location=location, target_count=target_count)
+        return leads
+
+    def _emergency_item_to_dict(self, item: Any) -> Dict[str, Any]:
+        if isinstance(item, dict):
+            return dict(item)
+        return {
+            "url": getattr(item, "url", ""),
+            "title": getattr(item, "title", ""),
+            "content": getattr(item, "content", ""),
+            "company_name": getattr(item, "company_name", ""),
+            "directory_url": getattr(item, "directory_url", ""),
+            "contact_signals": getattr(item, "contact_signals", {}),
+        }
+
+    def _store_partial_result(
+        self,
+        *,
+        leads: List[Dict[str, Any]],
+        steps: List[Dict[str, Any]],
+        stage: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        safe_leads = [dict(lead) for lead in (leads or []) if isinstance(lead, dict)]
+        safe_steps = [dict(step) for step in (steps or []) if isinstance(step, dict)]
+        safe_metadata = {
+            "pipeline": "velit_specialized_pipeline",
+            "status": "partial",
+            "partial_result": True,
+            "partial_stage": stage,
+            "partial_lead_count": len(safe_leads),
+        }
+        safe_metadata.update(metadata or {})
+        self._partial_result = {
+            "leads": safe_leads,
+            "steps": safe_steps,
+            "metadata": safe_metadata,
+        }
+
+    def get_partial_result(self, *, error: str = "", status: str = "timeout") -> Dict[str, Any]:
+        partial = self._partial_result or {}
+        metadata = dict(partial.get("metadata") or {})
+        metadata.update(
+            {
+                "pipeline": metadata.get("pipeline", "velit_specialized_pipeline"),
+                "status": status,
+                "partial_result": True,
+                "partial_lead_count": len(partial.get("leads") or []),
+            }
+        )
+        result = {
+            "leads": [dict(lead) for lead in (partial.get("leads") or []) if isinstance(lead, dict)],
+            "steps": [dict(step) for step in (partial.get("steps") or []) if isinstance(step, dict)],
+            "metadata": metadata,
+        }
+        if error:
+            result["error"] = error
+        return result
+
+    @staticmethod
+    def _empty_shortfall_stats(initial_lead_count: int, *, target_count: int = 0) -> Dict[str, Any]:
+        return {
+            "needed": bool(target_count and initial_lead_count < target_count),
+            "initial_lead_count": initial_lead_count,
+            "passes_used": 0,
+            "extra_queries_used": 0,
+            "extra_discovered_targets": 0,
+            "extra_corporate_targets": 0,
+            "extra_verified_targets": 0,
+            "final_lead_count": initial_lead_count,
+            "stop_reason": "no_shortfall",
+            "passes": [],
+        }
+
+    async def _run_shortfall_passes(
+        self,
+        *,
+        leads: List[Dict[str, Any]],
+        industry: str,
+        location: str,
+        seed_query: str,
+        target_count: int,
+        seen_urls: set[str],
+        seen_domains: set[str],
+        initial_quality_gate_stats: Dict[str, Any],
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]:
+        current_leads = list(leads or [])
+        current_quality_gate_stats = dict(initial_quality_gate_stats or {})
+        stats = self._empty_shortfall_stats(len(current_leads), target_count=target_count)
+        stats["needed"] = True
+        stats["stop_reason"] = ""
+        steps: List[Dict[str, Any]] = []
+        query_budget = max(0, int(self.shortfall_extra_query_limit or 0))
+
+        if self.shortfall_max_passes <= 0:
+            stats["stop_reason"] = "max_passes_reached"
+            stats["final_lead_count"] = len(current_leads)
+            return current_leads, stats, current_quality_gate_stats, steps
+
+        for pass_index in range(1, self.shortfall_max_passes + 1):
+            if len(current_leads) >= target_count:
+                stats["stop_reason"] = "target_reached"
+                break
+            if query_budget <= 0:
+                stats["stop_reason"] = "query_budget_exhausted"
+                break
+
+            query_limit = min(self.discovery_query_limit, query_budget)
+            queries = build_velit_shortfall_queries(
+                location=location,
+                pass_index=pass_index,
+                seed_query=seed_query,
+                max_queries=query_limit,
+            )
+            if not queries:
+                stats["stop_reason"] = "query_budget_exhausted"
+                break
+
+            query_budget -= len(queries)
+            stats["extra_queries_used"] += len(queries)
+            pass_info: Dict[str, Any] = {
+                "pass": pass_index,
+                "query_count": len(queries),
+                "discovered_targets": 0,
+                "corporate_targets": 0,
+                "verified_targets": 0,
+                "candidate_leads": 0,
+                "added_leads": 0,
+                "lead_count_after": len(current_leads),
+                "stop_reason": "",
+            }
+
+            discovered = await self._discover_targets(
+                industry=industry,
+                location=location,
+                seed_query=seed_query,
+                queries=queries,
+                seen_urls=seen_urls,
+            )
+            pass_info["discovered_targets"] = len(discovered)
+            stats["extra_discovered_targets"] += len(discovered)
+            if not discovered:
+                pass_info["stop_reason"] = "no_new_targets"
+                stats["passes_used"] += 1
+                stats["passes"].append(pass_info)
+                steps.append(self._shortfall_step(pass_info))
+                stats["stop_reason"] = "no_new_targets"
+                break
+
+            corporate_targets = await self._resolve_corporate_targets(
+                discovered,
+                industry=industry,
+                location=location,
+                limit=max(24, (target_count - len(current_leads)) * 2),
+                skip_domains=seen_domains,
+            )
+            pass_info["corporate_targets"] = len(corporate_targets)
+            stats["extra_corporate_targets"] += len(corporate_targets)
+            seen_domains.update(self._domains_from_items(corporate_targets))
+            seen_urls.update(self._urls_from_items(corporate_targets))
+            if not corporate_targets:
+                pass_info["stop_reason"] = "no_new_targets"
+                stats["passes_used"] += 1
+                stats["passes"].append(pass_info)
+                steps.append(self._shortfall_step(pass_info))
+                stats["stop_reason"] = "no_new_targets"
+                break
+
+            verified = await self._verify_targets(corporate_targets, limit=max(24, (target_count - len(current_leads)) * 2))
+            pass_info["verified_targets"] = len(verified)
+            stats["extra_verified_targets"] += len(verified)
+            seen_domains.update(self._domains_from_items(verified))
+            seen_urls.update(self._urls_from_items(verified))
+            if not verified:
+                pass_info["stop_reason"] = "no_new_verified_sites"
+                stats["passes_used"] += 1
+                stats["passes"].append(pass_info)
+                steps.append(self._shortfall_step(pass_info))
+                stats["stop_reason"] = "no_new_verified_sites"
+                break
+
+            extracted = await self._extract_targets(verified)
+            score_pool_size = min(
+                max((target_count - len(current_leads)) * 2, target_count + 12),
+                max(target_count, len(extracted)),
+                60,
+            )
+            pass_leads = await self._score_extracted_targets(
+                extracted,
+                industry=industry,
+                location=location,
+                target_count=score_pool_size,
+            )
+            pass_leads.extend(
+                self._build_backfill_leads_from_extracted(
+                    extracted,
+                    existing_leads=current_leads + pass_leads,
+                    industry=industry,
+                    location=location,
+                    target_count=score_pool_size,
+                )
+            )
+            pass_leads.sort(key=self._velit_rank_key, reverse=True)
+            pass_leads = pass_leads[:score_pool_size]
+            pass_leads = await self._enrich_leads_with_linkedin(
+                pass_leads,
+                industry=industry,
+                location=location,
+            )
+            pass_leads = await self._recover_missing_contacts(
+                pass_leads,
+                industry=industry,
+                location=location,
+            )
+            pass_leads = self._sanitize_outreach_leads(pass_leads, location=location)
+
+            before_count = len(current_leads)
+            current_leads, current_quality_gate_stats = apply_quality_gate(current_leads + pass_leads, drop_rejected=True)
+            current_leads = current_leads[:target_count]
+            after_count = len(current_leads)
+            pass_info["candidate_leads"] = len(pass_leads)
+            pass_info["added_leads"] = max(0, after_count - before_count)
+            pass_info["lead_count_after"] = after_count
+            pass_info["quality_gate"] = current_quality_gate_stats
+            if after_count >= target_count:
+                pass_info["stop_reason"] = "target_reached"
+                stats["stop_reason"] = "target_reached"
+            elif after_count <= before_count:
+                pass_info["stop_reason"] = "no_new_leads"
+                stats["stop_reason"] = "no_new_leads"
+            stats["passes_used"] += 1
+            stats["passes"].append(pass_info)
+            steps.append(self._shortfall_step(pass_info))
+
+            if stats["stop_reason"] in {"target_reached", "no_new_leads"}:
+                break
+
+        if not stats["stop_reason"]:
+            stats["stop_reason"] = "target_reached" if len(current_leads) >= target_count else "max_passes_reached"
+        stats["final_lead_count"] = len(current_leads)
+        return current_leads, stats, current_quality_gate_stats, steps
+
+    @staticmethod
+    def _shortfall_step(pass_info: Dict[str, Any]) -> Dict[str, Any]:
+        pass_index = int(pass_info.get("pass") or 0)
+        return {
+            "step": 4 + pass_index,
+            "stage": "velit_shortfall_discovery",
+            "type": "extra_tavily_search",
+            "query_count": pass_info.get("query_count", 0),
+            "discovered_targets": pass_info.get("discovered_targets", 0),
+            "corporate_targets": pass_info.get("corporate_targets", 0),
+            "verified_targets": pass_info.get("verified_targets", 0),
+            "candidate_leads": pass_info.get("candidate_leads", 0),
+            "added_leads": pass_info.get("added_leads", 0),
+            "lead_count_after": pass_info.get("lead_count_after", 0),
+            "stop_reason": pass_info.get("stop_reason", ""),
+        }
+
+    @staticmethod
+    def _urls_from_items(*groups: Iterable[Any]) -> set[str]:
+        urls: set[str] = set()
+        for group in groups:
+            for item in group or []:
+                if isinstance(item, dict):
+                    value = item.get("url") or item.get("company_website") or item.get("contact_page") or item.get("directory_url")
+                else:
+                    value = getattr(item, "url", "")
+                cleaned = str(value or "").strip()
+                if cleaned:
+                    urls.add(cleaned)
+        return urls
+
+    @staticmethod
+    def _domains_from_items(*groups: Iterable[Any]) -> set[str]:
+        domains: set[str] = set()
+        for url in VelitLeadPipeline._urls_from_items(*groups):
+            domain = normalize_domain(url)
+            if domain:
+                domains.add(domain)
+        return domains
+
+    @staticmethod
+    def _domains_from_leads(leads: Iterable[Dict[str, Any]]) -> set[str]:
+        domains: set[str] = set()
+        for lead in leads or []:
+            domain = normalize_domain(str(lead.get("company_website") or lead.get("website_url") or lead.get("contact_page") or ""))
+            if domain:
+                domains.add(domain)
+        return domains
+
+    async def _discover_targets(
+        self,
+        *,
+        industry: str,
+        location: str,
+        seed_query: str,
+        queries: Optional[List[str]] = None,
+        seen_urls: Optional[set[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        if queries is None:
+            queries = build_velit_queries(location=location, seed_query=seed_query, max_queries=self.discovery_query_limit)
+        seen_urls = seen_urls if seen_urls is not None else set()
         results: List[Dict[str, Any]] = []
         for query in queries:
             try:
@@ -292,10 +879,12 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         industry: str,
         location: str,
         limit: int,
+        skip_domains: Optional[set[str]] = None,
+        skip_company_keys: Optional[set[str]] = None,
     ) -> List[Dict[str, Any]]:
         targets: List[Dict[str, Any]] = []
-        seen_companies = set()
-        seen_domains = set()
+        seen_companies = set(skip_company_keys or set())
+        seen_domains = set(skip_domains or set())
         items = list(discovery_items)
 
         for item in items:
@@ -1781,6 +2370,12 @@ class VelitLeadPipeline(ProductionLeadPipeline):
     def _industry_markers(industry: str) -> List[str]:
         return [
             "upfitter",
+            "commercial van upfitter",
+            "fleet upfit",
+            "work truck upfitter",
+            "van shelving",
+            "truck body",
+            "commercial vehicle equipment",
             "van conversion",
             "camper van",
             "sprinter van",
@@ -1832,3 +2427,8 @@ class VelitLeadPipeline(ProductionLeadPipeline):
         except ValueError:
             value = default
         return max(minimum, min(value, maximum))
+
+    @classmethod
+    def _phase_timeout_seconds(cls, phase: str, default: int) -> int:
+        env_name = f"VELIT_{phase.upper()}_PHASE_TIMEOUT_SECONDS"
+        return cls._bounded_int_env(env_name, default=default, minimum=10, maximum=600)

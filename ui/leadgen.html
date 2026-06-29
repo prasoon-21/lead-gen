@@ -353,6 +353,10 @@
         <span id="theme-toggle-icon">☀️</span>
         <span id="theme-toggle-label">Light Mode</span>
       </button>
+      <a href="/velit-batch-scheduler" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M5 11h14M7 21h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        Automation
+      </a>
       <a href="/" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
         Dashboard
@@ -1807,30 +1811,21 @@
       lead.specialty         = lead.industry; // mirrors industry for sheet column
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
       lead.lead_summary      = find(['lead summary', 'business summary', 'plain summary', 'what they do', 'summary']) || buildLeadSummary(lead);
+      lead.location_evidence = find(['location evidence', 'location_evidence']) || '';
 
       // Location — try dedicated fields first, fall back to compound string
       const rawCity  = find(['city'])  || '';
       const rawState = find(['state']) || '';
       const rawZip   = find(['zip', 'postal']) || '';
       const rawLoc   = find(['location', 'address']) || '';
+      const rawAddress = find(['address', 'street address', 'business address']) || '';
 
-      if (rawCity || rawState || rawZip) {
-        lead.city     = rawCity;
-        lead.state    = rawState;
-        lead.zip_code = rawZip;
-      } else if (rawLoc) {
-        // Try to split "City, ST 12345" or "City, State" heuristically
-        const parts = rawLoc.split(',').map(s => s.trim());
-        lead.city     = parts[0] || rawLoc;
-        lead.state    = parts[1] || '';
-        lead.zip_code = parts[2] || '';
-      } else {
-        lead.city = lead.state = lead.zip_code = '';
-      }
-      lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
+      Object.assign(lead, parseLeadLocationParts(rawCity, rawState, rawZip, rawLoc, rawAddress));
+      lead.location = lead.location || [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
 
       lead.status = find(['status']) || 'New';
       lead.notes  = find(['notes', 'comments', 'remarks']) || lead.lead_summary || lead.value_proposition || '';
+      lead.address = rawAddress;
 
       return lead;
     }
@@ -2681,31 +2676,20 @@
       lead.specialty = lead.industry;
       lead.value_proposition = find(['value prop', 'description', 'about', 'pitch']) || '—';
       lead.lead_summary = find(['lead summary', 'business summary', 'plain summary', 'what they do', 'summary']) || buildLeadSummary(lead);
+      lead.location_evidence = find(['location evidence', 'location_evidence']) || '';
 
       const rawCity = find(['city']) || '';
       const rawState = find(['state']) || '';
       const rawZip = find(['zip', 'postal']) || '';
       const rawLocation = find(['location', 'address']) || '';
+      const rawAddress = find(['address', 'street address', 'business address']) || '';
 
-      if (rawCity || rawState || rawZip) {
-        lead.city = rawCity;
-        lead.state = rawState;
-        lead.zip_code = rawZip;
-      } else if (rawLocation) {
-        const parts = String(rawLocation).split(',').map(part => part.trim());
-        lead.city = parts[0] || rawLocation;
-        lead.state = parts[1] || '';
-        lead.zip_code = parts[2] || '';
-      } else {
-        lead.city = '';
-        lead.state = '';
-        lead.zip_code = '';
-      }
+      Object.assign(lead, parseLeadLocationParts(rawCity, rawState, rawZip, rawLocation, rawAddress));
 
-      lead.location = [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
+      lead.location = lead.location || [lead.city, lead.state, lead.zip_code].filter(Boolean).join(', ') || '—';
       lead.status = find(['status']) || 'New';
       lead.notes = find(['notes', 'comments', 'remarks']) || lead.lead_summary || lead.value_proposition || '';
-      lead.address = find(['address', 'street address', 'business address']) || '';
+      lead.address = rawAddress;
       lead.tags = find(['tags', 'tag']) || '';
       return lead;
     }
@@ -2734,6 +2718,8 @@
       'nm', 'ny', 'nc', 'nd', 'oh', 'ok', 'or', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'vt',
       'va', 'wa', 'wv', 'wi', 'wy', 'dc',
     ]);
+    const STATE_CITY_OVERLAP = new Set(['new york', 'oklahoma', 'kansas', 'indiana', 'iowa', 'virginia']);
+    const US_STATE_TEXT_PATTERN = '(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)';
     const BUSINESS_TYPE_RULES = [
       { tag: 'truck body', patterns: ['truck body', 'service body', 'utility body', 'dump body', 'flatbed body', 'truck bodies'] },
       { tag: 'fleet / work truck', patterns: ['fleet', 'work truck', 'work trucks', 'fleet vehicle', 'fleet vehicles'] },
@@ -2768,32 +2754,112 @@
     }
 
     function cleanCityForTag(value) {
-      const city = normalizeTagPart(value).replace(/\b(city of|city)\b/g, '').trim();
+      const city = normalizeTagPart(value)
+        .replace(/^(serving|located in|based in|headquartered in|near|around|in)\s+/g, '')
+        .replace(/\b(city of|city)\b/g, '')
+        .trim();
       if (!city || city.length < 2 || city.length > 45) return '';
       if (/\d|@|www|https?/.test(city)) return '';
-      if (US_STATE_NAMES.has(city) || US_STATE_CODES.has(city)) return '';
+      if ((US_STATE_NAMES.has(city) || US_STATE_CODES.has(city)) && !STATE_CITY_OVERLAP.has(city)) return '';
       if (['location', 'address', 'unknown', 'home', 'homepage'].includes(city)) return '';
       if (/(upfitter|conversion|commercial|vehicle|fleet|truck|van|rv|builder|dealer|service)/i.test(city)) return '';
       return city;
     }
 
+    function cleanStateForDisplay(value) {
+      const cleaned = cleanExportValue(value);
+      const normalized = normalizeTagPart(cleaned);
+      if (!cleaned || normalized === 'usa' || normalized === 'united states') return '';
+      if (US_STATE_CODES.has(normalized)) return normalized.toUpperCase();
+      if (US_STATE_NAMES.has(normalized)) {
+        return normalized.replace(/\b\w/g, char => char.toUpperCase());
+      }
+      return cleaned;
+    }
+
+    function extractLocationPartsFromText(value) {
+      const text = cleanExportValue(value);
+      if (!text) return {};
+      const commaMatch = text.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,45})\\s*,\\s*(' + US_STATE_TEXT_PATTERN + ')\\s*(\\d{5}(?:-\\d{4})?)?', 'i'));
+      if (commaMatch) {
+        return {
+          city: cleanCityForTag(commaMatch[1]),
+          state: cleanStateForDisplay(commaMatch[2]),
+          zip_code: commaMatch[3] || '',
+        };
+      }
+      const noCommaMatch = text.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,45})\\s+(' + US_STATE_TEXT_PATTERN + ')\\s+(\\d{5}(?:-\\d{4})?)\\b', 'i'));
+      if (noCommaMatch) {
+        return {
+          city: cleanCityForTag(noCommaMatch[1]),
+          state: cleanStateForDisplay(noCommaMatch[2]),
+          zip_code: noCommaMatch[3] || '',
+        };
+      }
+      const zipMatch = text.match(/\b(\d{5}(?:-\d{4})?)\b/);
+      return { zip_code: zipMatch ? zipMatch[1] : '' };
+    }
+
+    function stateOnlyFromLocation(value) {
+      const cleaned = cleanExportValue(value);
+      const normalized = normalizeTagPart(cleaned);
+      if (!cleaned) return '';
+      if (US_STATE_CODES.has(normalized)) return normalized.toUpperCase();
+      if (US_STATE_NAMES.has(normalized) && !STATE_CITY_OVERLAP.has(normalized)) return cleanStateForDisplay(cleaned);
+      return '';
+    }
+
+    function parseLeadLocationParts(rawCity, rawState, rawZip, rawLocation, rawAddress) {
+      const address = firstExportValue(rawAddress);
+      let city = cleanCityForTag(rawCity);
+      let state = cleanStateForDisplay(rawState);
+      let zip = firstExportValue(rawZip).match(/\b\d{5}(?:-\d{4})?\b/)?.[0] || '';
+
+      for (const source of [address, rawLocation]) {
+        if (city && state && zip) break;
+        const parsed = extractLocationPartsFromText(source);
+        city = city || parsed.city || '';
+        state = state || parsed.state || '';
+        zip = zip || parsed.zip_code || '';
+      }
+
+      state = state || stateOnlyFromLocation(rawLocation);
+      const fallbackLocation = firstExportValue(rawLocation, address);
+      return {
+        city,
+        state,
+        zip_code: zip,
+        address,
+        location: [city, state, zip].filter(Boolean).join(', ') || fallbackLocation || '—',
+      };
+    }
+
     function inferCityTag(lead) {
       const directCity = cleanCityForTag(lead.city);
       if (directCity) return directCity;
-      const location = firstExportValue(lead.location, lead.address);
+      const location = firstExportValue(lead.location, lead.address, lead.location_evidence);
       if (location) {
         const cityFromLocation = location.split(',').map(part => cleanCityForTag(part)).find(Boolean);
         if (cityFromLocation) return cityFromLocation;
       }
+      const evidenceSources = [
+        lead.location_evidence, lead.address, lead.notes, lead.lead_summary, lead.value_proposition,
+      ].map(cleanExportValue).filter(Boolean);
+      for (const source of evidenceSources) {
+        const parsedCity = extractLocationPartsFromText(source).city;
+        if (parsedCity) return parsedCity;
+        const phraseMatch = source.match(new RegExp('\\b(?:in|near|around|serving|based in|located in)\\s+([A-Z][A-Za-z .-]{1,40})(?:,|\\s+' + US_STATE_TEXT_PATTERN + '\\b)'));
+        const phraseCity = phraseMatch ? cleanCityForTag(phraseMatch[1]) : '';
+        if (phraseCity) return phraseCity;
+      }
       const searchable = [
-        lead.notes, lead.address, lead.location, lead.lead_summary,
+        lead.notes, lead.address, lead.location, lead.location_evidence, lead.lead_summary,
         lead.value_proposition, lead.company_name, lead.company_website,
       ].map(cleanExportValue).filter(Boolean).join(' ');
-      const statePattern = '(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Nevada|New Jersey|New Mexico|New York|North Carolina|Ohio|Oklahoma|Oregon|Pennsylvania|Tennessee|Texas|Utah|Virginia|Washington|Wisconsin)';
-      const commaMatch = searchable.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,40})\\s*,\\s*' + statePattern + '\\b'));
+      const commaMatch = searchable.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,40})\\s*,\\s*' + US_STATE_TEXT_PATTERN + '\\b'));
       const commaCity = commaMatch ? cleanCityForTag(commaMatch[1]) : '';
       if (commaCity) return commaCity;
-      const phraseMatch = searchable.match(new RegExp('\\b(?:in|near|around|serving|based in|located in)\\s+([A-Z][A-Za-z .-]{1,40})(?:,|\\s+' + statePattern + '\\b)'));
+      const phraseMatch = searchable.match(new RegExp('\\b(?:in|near|around|serving|based in|located in)\\s+([A-Z][A-Za-z .-]{1,40})(?:,|\\s+' + US_STATE_TEXT_PATTERN + '\\b)'));
       const phraseCity = phraseMatch ? cleanCityForTag(phraseMatch[1]) : '';
       return phraseCity || 'unknown-city';
     }

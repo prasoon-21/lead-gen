@@ -41,6 +41,14 @@ verified_*.xlsx
 leads_*.csv
 lead_run_*.json
 
+# Local runtime data and generated exports
+data/
+exports/
+
+# Local test feature experiments
+api/routes/_test_features/
+core/services/_test_features/
+
 # Generated local reports / presentation exports
 Lead Generation Final Report.pdf
 Lead Generation Final Report.html

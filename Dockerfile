@@ -12,6 +12,7 @@ COPY core/ ./core/
 COPY config/ ./config/
 COPY workflows/ ./workflows/
 COPY ui/ ./ui/
+COPY railway_start.py ./railway_start.py
 
 # Create runtime directories
 RUN mkdir -p logs data exports
@@ -20,5 +21,5 @@ RUN mkdir -p logs data exports
 ENV PORT=8000
 EXPOSE $PORT
 
-# Run the API server using shell form to allow variable expansion
-CMD uvicorn api.main:app --host 0.0.0.0 --port $PORT
+# Run the API server with Railway's dynamic PORT
+CMD ["python", "railway_start.py"]

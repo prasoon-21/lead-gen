@@ -24,6 +24,78 @@ class HunterSearchPipeline:
         self.max_email_finders = self._env_int("HUNTER_MAX_EMAIL_FINDERS", 20)
         self.max_email_verifications = self._env_int("HUNTER_MAX_EMAIL_VERIFICATIONS", 10)
 
+    async def get_account_info(self) -> Dict[str, Any]:
+        """GET https://api.hunter.io/v2/account?api_key={key}."""
+        if not self.api_key:
+            return {"ok": False, "data": {}, "status_code": None, "reason": "hunter_missing_api_key"}
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{self.base_url}/account",
+                    params={"api_key": self.api_key},
+                )
+                if resp.status_code in {401, 403, 429}:
+                    return {
+                        "ok": False,
+                        "data": self._safe_response_json(resp),
+                        "status_code": resp.status_code,
+                        "reason": f"hunter_account_http_{resp.status_code}",
+                    }
+                resp.raise_for_status()
+                return {
+                    "ok": True,
+                    "data": resp.json().get("data", resp.json()),
+                    "status_code": resp.status_code,
+                    "reason": "",
+                }
+        except httpx.HTTPStatusError as exc:
+            return {
+                "ok": False,
+                "data": self._safe_response_json(exc.response),
+                "status_code": exc.response.status_code,
+                "reason": f"hunter_account_http_{exc.response.status_code}",
+            }
+        except Exception as exc:
+            self.logger.warning("hunter_account_check_failed", extra={"payload": str(exc)})
+            return {"ok": False, "data": {}, "status_code": None, "reason": f"hunter_account_error:{exc}"}
+
+    async def get_credit_status(self) -> Dict[str, Any]:
+        account = await self.get_account_info()
+        raw = account.get("data") or {}
+        available = self._extract_credit_value(raw, "available")
+        used = self._extract_credit_value(raw, "used")
+        if available is None:
+            available = self._extract_credit_value(raw, "remaining")
+        if available is None:
+            available = self._extract_credit_value(raw, "left")
+
+        if not account.get("ok"):
+            return {
+                "ok": False,
+                "available": int(available or 0),
+                "used": used,
+                "raw": raw,
+                "reason": account.get("reason") or "hunter_account_unavailable",
+            }
+
+        return {
+            "ok": available is not None,
+            "available": int(available or 0),
+            "used": used,
+            "raw": raw,
+            "reason": "" if available is not None else "hunter_credit_shape_unknown",
+        }
+
+    def has_enough_credits(self, credit_status: Dict[str, Any], *, minimum: int) -> bool:
+        if not credit_status.get("ok"):
+            return False
+        try:
+            available = int(credit_status.get("available") or 0)
+        except Exception:
+            return False
+        return available >= max(0, int(minimum or 0))
+
     async def run(
         self,
         *,
@@ -372,6 +444,44 @@ class HunterSearchPipeline:
             return max(0, int(os.getenv(name, str(default))))
         except Exception:
             return default
+
+    @staticmethod
+    def _safe_response_json(response: httpx.Response) -> Dict[str, Any]:
+        try:
+            parsed = response.json()
+            return parsed if isinstance(parsed, dict) else {"value": parsed}
+        except Exception:
+            return {"text": response.text[:500]}
+
+    @classmethod
+    def _extract_credit_value(cls, data: Dict[str, Any], key: str) -> int | None:
+        candidate_paths = [
+            ("requests", "searches", key),
+            ("requests", "credits", key),
+            ("requests", key),
+            ("calls", key),
+            (key,),
+        ]
+        for path in candidate_paths:
+            current: Any = data
+            for part in path:
+                if not isinstance(current, dict):
+                    current = None
+                    break
+                current = current.get(part)
+            numeric = cls._to_int_or_none(current)
+            if numeric is not None:
+                return numeric
+        return None
+
+    @staticmethod
+    def _to_int_or_none(value: Any) -> int | None:
+        try:
+            if value is None or value == "":
+                return None
+            return int(value)
+        except Exception:
+            return None
 
     @staticmethod
     def _domain_from_url(url: str) -> str:

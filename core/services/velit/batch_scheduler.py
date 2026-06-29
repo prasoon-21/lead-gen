@@ -28,6 +28,190 @@ QUEUE_FILE = DATA_DIR / "velit_batch_queue.json"
 RUNS_FILE = DATA_DIR / "velit_batch_runs.json"
 RUN_STATUSES = {"pending", "scheduled", "running", "completed", "failed", "paused", "skipped"}
 DEFAULT_AUTOMATION_TIMEOUT_SECONDS = 600
+CRM_EXPORT_HEADERS = [
+    "Name (Required)",
+    "Email (Required)",
+    "Company Name",
+    "Designation",
+    "Phone",
+    "Industry",
+    "Notes",
+    "Tags",
+    "Contact Type",
+    "Email Status",
+    "Website",
+    "Person LinkedIn",
+    "Company LinkedIn",
+    "Lead Summary",
+    "Why Accepted",
+    "Alternate Phones",
+    "Phone Confidence",
+    "Phone Source",
+    "Phone Status",
+    "City",
+    "State",
+    "Zip Code",
+    "Status",
+]
+CRM_EXPORT_COLUMN_KEYS = {
+    "Name (Required)": {"contact_person_name", "founder_name"},
+    "Email (Required)": {"contact_email"},
+    "Company Name": {"company_name"},
+    "Designation": {"contact_person_title", "designation", "role"},
+    "Phone": {"contact_phone"},
+    "Industry": {"industry", "specialty"},
+    "Notes": {"notes", "lead_summary", "value_proposition"},
+    "Tags": {"tags", "tag"},
+    "Email Status": {"email_status", "verification_status"},
+    "Website": {"company_website"},
+    "Person LinkedIn": {"linkedin_url"},
+    "Company LinkedIn": {"company_linkedin_url"},
+    "Lead Summary": {"lead_summary"},
+    "Why Accepted": {"acceptance_reason", "confidence_explanation"},
+    "Alternate Phones": {"alternate_phones"},
+    "Phone Confidence": {"phone_confidence"},
+    "Phone Source": {"phone_source"},
+    "Phone Status": {"phone_validation_status"},
+    "City": {"city"},
+    "State": {"state"},
+    "Zip Code": {"zip_code"},
+    "Status": {"status"},
+}
+CRM_EXPORT_SKIP_DYNAMIC_KEYS = {"email_verification", "verification_checks", "field_sources", "source_details"}
+PLACEHOLDER_EMAILS = {"user@domain.com", "email@domain.com", "user@example.com", "name@example.com", "test@example.com"}
+PLACEHOLDER_EMAIL_DOMAINS = {"domain.com", "example.com", "example.net", "example.org"}
+US_STATE_NAMES = {
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+    "usa",
+    "united states",
+}
+US_STATE_CODES = {
+    "al",
+    "ak",
+    "az",
+    "ar",
+    "ca",
+    "co",
+    "ct",
+    "de",
+    "fl",
+    "ga",
+    "hi",
+    "id",
+    "il",
+    "in",
+    "ia",
+    "ks",
+    "ky",
+    "la",
+    "me",
+    "md",
+    "ma",
+    "mi",
+    "mn",
+    "ms",
+    "mo",
+    "mt",
+    "ne",
+    "nv",
+    "nh",
+    "nj",
+    "nm",
+    "ny",
+    "nc",
+    "nd",
+    "oh",
+    "ok",
+    "or",
+    "pa",
+    "ri",
+    "sc",
+    "sd",
+    "tn",
+    "tx",
+    "ut",
+    "vt",
+    "va",
+    "wa",
+    "wv",
+    "wi",
+    "wy",
+    "dc",
+}
+STATE_CITY_OVERLAP = {"new york", "oklahoma", "kansas", "indiana", "iowa", "virginia"}
+BUSINESS_TYPE_RULES = [
+    ("truck body", ("truck body", "service body", "utility body", "dump body", "flatbed body", "truck bodies")),
+    ("fleet / work truck", ("fleet", "work truck", "work trucks", "fleet vehicle", "fleet vehicles")),
+    (
+        "van conversion",
+        (
+            "van conversion",
+            "van conversions",
+            "camper van",
+            "campervan",
+            "sprinter conversion",
+            "conversion van",
+            "rv conversion",
+            "overland van",
+            "adventure van",
+        ),
+    ),
+    ("upfitter", ("upfitter", "upfitters", "upfit", "upfitting", "vehicle upfit", "van upfit")),
+    ("commercial vehicle", ("commercial vehicle", "commercial vehicles", "commercial van", "cargo van", "commercial truck")),
+]
+US_STATE_TEXT_PATTERN = (
+    r"(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|"
+    r"Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)"
+)
 
 
 def _utc_now() -> datetime:
@@ -59,7 +243,8 @@ def _clean_cell(value: Any) -> str:
     if isinstance(value, dict):
         return json.dumps(value, ensure_ascii=False)
     text = str(value or "").strip()
-    return "" if text.lower() in {"none", "null", "n/a", "na", "-", "--"} else text
+    placeholder_values = {"none", "null", "n/a", "na", "-", "--", "not found", "\u2014", "\u2013"}
+    return "" if text.lower() in placeholder_values else text
 
 
 @dataclass
@@ -634,53 +819,11 @@ class VelitBatchScheduler:
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Leads"
-        headers = [
-            "Company Name",
-            "Contact Name",
-            "Target Role",
-            "Contact Title",
-            "Email",
-            "Phone",
-            "Website",
-            "Person LinkedIn",
-            "Company LinkedIn",
-            "Location",
-            "City",
-            "State",
-            "Lead Summary",
-            "Value Proposition",
-            "Quality Score",
-            "Verification Status",
-            "Phone Status",
-            "Source",
-            "Generated At",
-        ]
+        headers, rows = self._build_crm_export_table(leads, item=item)
+        tag_summary = self._crm_export_tag_summary(leads, item=item)
         sheet.append(headers)
-        generated_at = _iso()
-        for lead in leads:
-            sheet.append(
-                [
-                    _clean_cell(lead.get("company_name")),
-                    _clean_cell(lead.get("contact_person_name") or lead.get("founder_name")),
-                    item.target_role,
-                    _clean_cell(lead.get("contact_person_title")),
-                    _clean_cell(lead.get("contact_email")),
-                    _clean_cell(lead.get("contact_phone")),
-                    _clean_cell(lead.get("company_website")),
-                    _clean_cell(lead.get("linkedin_url")),
-                    _clean_cell(lead.get("company_linkedin_url")),
-                    _clean_cell(lead.get("location") or item.location),
-                    _clean_cell(lead.get("city")),
-                    _clean_cell(lead.get("state")),
-                    _clean_cell(lead.get("lead_summary")),
-                    _clean_cell(lead.get("value_proposition")),
-                    _clean_cell(lead.get("quality_score")),
-                    _clean_cell(lead.get("verification_status")),
-                    _clean_cell(lead.get("phone_validation_status")),
-                    _clean_cell(lead.get("source")),
-                    generated_at,
-                ]
-            )
+        for row in rows:
+            sheet.append(row)
 
         metadata = workbook.create_sheet("Run Metadata")
         finished_at = _iso()
@@ -709,6 +852,9 @@ class VelitBatchScheduler:
             ("Requested target count", (result.get("metadata") or {}).get("automation_requested_target_count", "")),
             ("Pipeline target count", (result.get("metadata") or {}).get("automation_pipeline_target_count", "")),
             ("Pipeline error", result.get("error", "")),
+            ("Rows with generated tags", tag_summary["rows_with_generated_tags"]),
+            ("Rows with unknown city tags", tag_summary["rows_with_unknown_city_tags"]),
+            ("Business type tag counts", tag_summary["business_type_tag_counts"]),
         ]
         export_filter = (result.get("metadata") or {}).get("automation_export_filter")
         if isinstance(export_filter, dict):
@@ -727,6 +873,354 @@ class VelitBatchScheduler:
         self._style_sheet(metadata)
         workbook.save(path)
         return str(path)
+
+    @classmethod
+    def _build_crm_export_table(
+        cls,
+        leads: List[Dict[str, Any]],
+        *,
+        item: VelitQueueItem,
+    ) -> tuple[List[str], List[List[str]]]:
+        dynamic_keys = cls._crm_dynamic_keys(leads)
+        headers = [*CRM_EXPORT_HEADERS, *[cls._readable_header_from_key(key) for key in dynamic_keys]]
+        rows = [
+            [
+                *[cls._crm_fixed_column_value(header, lead, item=item) for header in CRM_EXPORT_HEADERS],
+                *[_clean_cell(lead.get(key)) for key in dynamic_keys],
+            ]
+            for lead in leads
+        ]
+        return headers, rows
+
+    @classmethod
+    def _crm_export_tag_summary(
+        cls,
+        leads: List[Dict[str, Any]],
+        *,
+        item: VelitQueueItem,
+    ) -> Dict[str, Any]:
+        rows_with_generated_tags = 0
+        rows_with_unknown_city_tags = 0
+        business_type_counts: Dict[str, int] = {}
+
+        for lead in leads:
+            tag_value = cls._build_tags_for_export(lead, item=item)
+            parts = [part for part in (cls._normalize_tag_part(part) for part in tag_value.split(",")) if part]
+            city_tag = parts[0] if parts else "unknown-city"
+            business_tag = parts[1] if len(parts) > 1 else "unknown-business-type"
+
+            if tag_value:
+                rows_with_generated_tags += 1
+            if city_tag == "unknown-city":
+                rows_with_unknown_city_tags += 1
+            business_type_counts[business_tag] = business_type_counts.get(business_tag, 0) + 1
+
+        return {
+            "rows_with_generated_tags": rows_with_generated_tags,
+            "rows_with_unknown_city_tags": rows_with_unknown_city_tags,
+            "business_type_tag_counts": ", ".join(
+                f"{tag}: {count}"
+                for tag, count in sorted(business_type_counts.items(), key=lambda item: (-item[1], item[0]))
+            ),
+        }
+
+    @classmethod
+    def _crm_dynamic_keys(cls, leads: List[Dict[str, Any]]) -> List[str]:
+        used_keys = set(CRM_EXPORT_SKIP_DYNAMIC_KEYS)
+        for keys in CRM_EXPORT_COLUMN_KEYS.values():
+            used_keys.update(keys)
+        used_headers = {header.lower() for header in CRM_EXPORT_HEADERS}
+        dynamic_keys: List[str] = []
+        dict_leads = [lead for lead in leads if isinstance(lead, dict)]
+
+        for lead in dict_leads:
+            for key in lead.keys():
+                if key in used_keys:
+                    continue
+                header = cls._readable_header_from_key(key)
+                if header.lower() in used_headers:
+                    continue
+                if not any(_clean_cell(other.get(key)) for other in dict_leads):
+                    continue
+                used_keys.add(key)
+                used_headers.add(header.lower())
+                dynamic_keys.append(key)
+
+        return sorted(dynamic_keys)
+
+    @classmethod
+    def _crm_fixed_column_value(cls, header: str, lead: Dict[str, Any], *, item: VelitQueueItem) -> str:
+        if header == "Name (Required)":
+            return cls._first_export_value(lead.get("contact_person_name"), lead.get("founder_name"), lead.get("company_name"))
+        if header == "Email (Required)":
+            email = _clean_cell(lead.get("contact_email"))
+            return "" if cls._is_placeholder_email(email) else email
+        if header == "Company Name":
+            return cls._first_export_value(lead.get("company_name"))
+        if header == "Designation":
+            return cls._first_export_value(lead.get("contact_person_title"), lead.get("designation"), lead.get("role"))
+        if header == "Phone":
+            return cls._first_export_value(lead.get("contact_phone"))
+        if header == "Industry":
+            return cls._first_export_value(lead.get("industry"), lead.get("specialty"), item.industry)
+        if header == "Notes":
+            return cls._first_export_value(lead.get("notes"), lead.get("lead_summary"), lead.get("value_proposition"))
+        if header == "Tags":
+            return cls._build_tags_for_export(lead, item=item)
+        if header == "Contact Type":
+            return "potential customer"
+        if header == "Email Status":
+            return cls._first_export_value(lead.get("email_status"), cls._email_verification_status(lead))
+        if header == "Website":
+            return cls._first_export_value(lead.get("company_website"))
+        if header == "Person LinkedIn":
+            return cls._first_export_value(lead.get("linkedin_url"))
+        if header == "Company LinkedIn":
+            return cls._first_export_value(lead.get("company_linkedin_url"))
+        if header == "Lead Summary":
+            return cls._first_export_value(lead.get("lead_summary"), cls._build_lead_summary(lead))
+        if header == "Why Accepted":
+            return cls._first_export_value(lead.get("acceptance_reason"), lead.get("confidence_explanation"))
+        if header == "Alternate Phones":
+            return _clean_cell(lead.get("alternate_phones"))
+        if header == "Phone Confidence":
+            return cls._first_export_value(lead.get("phone_confidence"))
+        if header == "Phone Source":
+            return cls._first_export_value(lead.get("phone_source"))
+        if header == "Phone Status":
+            return cls._first_export_value(lead.get("phone_validation_status"))
+        if header == "City":
+            return cls._first_export_value(lead.get("city"))
+        if header == "State":
+            return cls._first_export_value(lead.get("state"))
+        if header == "Zip Code":
+            return cls._first_export_value(lead.get("zip_code"))
+        if header == "Status":
+            return cls._first_export_value(lead.get("status"), "New")
+        return ""
+
+    @staticmethod
+    def _first_export_value(*values: Any) -> str:
+        for value in values:
+            cleaned = _clean_cell(value)
+            if cleaned:
+                return cleaned
+        return ""
+
+    @staticmethod
+    def _readable_header_from_key(key: str) -> str:
+        header = re.sub(r"_+", " ", str(key or "")).title()
+        header = re.sub(r"\bUrl\b", "URL", header)
+        header = re.sub(r"\bId\b", "ID", header)
+        return header
+
+    @staticmethod
+    def _is_placeholder_email(value: Any) -> bool:
+        email = _clean_cell(value).lower()
+        if not email:
+            return False
+        domain = email.split("@", 1)[1] if "@" in email else ""
+        return email in PLACEHOLDER_EMAILS or domain in PLACEHOLDER_EMAIL_DOMAINS
+
+    @classmethod
+    def _email_verification_status(cls, lead: Dict[str, Any]) -> str:
+        verification = lead.get("email_verification")
+        if isinstance(verification, dict):
+            checks = verification.get("checks")
+            has_payload = any(
+                _clean_cell(verification.get(key))
+                for key in ("status", "normalized_email", "message")
+            ) or (isinstance(checks, list) and bool(checks))
+            if has_payload:
+                return _clean_cell(verification.get("status")) or "not verified"
+        return _clean_cell(lead.get("email_status")) or "not verified"
+
+    @classmethod
+    def _build_lead_summary(cls, lead: Dict[str, Any]) -> str:
+        existing = cls._first_export_value(
+            lead.get("lead_summary"),
+            lead.get("business_summary"),
+            lead.get("plain_summary"),
+            lead.get("what_they_do"),
+        )
+        if existing:
+            return existing
+        company = cls._first_export_value(lead.get("company_name")) or "This company"
+        specialty = cls._first_export_value(lead.get("specialty"), lead.get("industry")) or "B2B services"
+        location = cls._first_export_value(lead.get("location"), ", ".join(_clean_cell(lead.get(key)) for key in ("city", "state") if _clean_cell(lead.get(key))))
+        value_prop = cls._first_export_value(lead.get("value_proposition"), lead.get("notes"))
+        signals: List[str] = []
+        if cls._first_export_value(lead.get("contact_email")) and not cls._is_placeholder_email(lead.get("contact_email")):
+            signals.append("email")
+        if cls._first_export_value(lead.get("contact_phone")):
+            signals.append("phone")
+        if cls._first_export_value(lead.get("linkedin_url"), lead.get("company_linkedin_url")):
+            signals.append("LinkedIn")
+        if cls._first_export_value(lead.get("company_website")):
+            signals.append("website")
+        location_text = f" in/around {location}" if location else ""
+        signal_text = f" Contact path found via {', '.join(dict.fromkeys(signals))}." if signals else ""
+        detail = f" {value_prop}" if value_prop and not re.match(r"^verified", value_prop, flags=re.I) else " Useful for outreach because it matches the selected lead category."
+        return f"{company} appears to provide {specialty}{location_text}.{detail}{signal_text}"[:280]
+
+    @classmethod
+    def _build_tags_for_export(cls, lead: Dict[str, Any], *, item: VelitQueueItem) -> str:
+        existing_tags = cls._first_export_value(lead.get("tags"), lead.get("Tags"), lead.get("tag"))
+        existing_parts = [part for part in (cls._normalize_tag_part(part) for part in existing_tags.split(",")) if part]
+        existing_looks_valid = (
+            len(existing_parts) == 2
+            and not re.search(r"\b(?:https?|www|instagram|facebook|linkedin|youtube)\b", existing_tags, flags=re.I)
+            and bool(cls._clean_city_for_tag(existing_parts[0]))
+            and existing_parts[1] != "unknown-business-type"
+            and any(rule_tag == existing_parts[1] for rule_tag, _ in BUSINESS_TYPE_RULES)
+        )
+        if existing_looks_valid:
+            return f"{cls._clean_city_for_tag(existing_parts[0])}, {existing_parts[1]}"
+        return f"{cls._infer_city_tag(lead, item=item)}, {cls._infer_business_type_tag(lead, item=item)}"
+
+    @staticmethod
+    def _normalize_tag_part(value: Any) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9/ -]+", " ", _clean_cell(value).lower().replace("&", " and "))).strip()
+
+    @classmethod
+    def _clean_city_for_tag(cls, value: Any) -> str:
+        city = cls._normalize_tag_part(value)
+        city = re.sub(r"^(serving|located in|based in|headquartered in|near|around|in)\s+", "", city)
+        city = re.sub(r"\b(city of|city)\b", "", city).strip()
+        if not city or len(city) < 2 or len(city) > 45:
+            return ""
+        if re.search(r"\d|@|www|https?", city):
+            return ""
+        if (city in US_STATE_NAMES or city in US_STATE_CODES) and city not in STATE_CITY_OVERLAP:
+            return ""
+        if city in {"location", "address", "unknown", "home", "homepage"}:
+            return ""
+        if re.search(r"(upfitter|conversion|commercial|vehicle|fleet|truck|van|rv|builder|dealer|service)", city, flags=re.I):
+            return ""
+        return city
+
+    @classmethod
+    def _clean_state_for_display(cls, value: Any) -> str:
+        cleaned = _clean_cell(value)
+        normalized = cls._normalize_tag_part(cleaned)
+        if not cleaned or normalized in {"usa", "united states"}:
+            return ""
+        if normalized in US_STATE_CODES:
+            return normalized.upper()
+        if normalized in US_STATE_NAMES:
+            return normalized.title()
+        return cleaned
+
+    @classmethod
+    def _extract_location_parts_from_text(cls, value: Any) -> Dict[str, str]:
+        text = _clean_cell(value)
+        if not text:
+            return {}
+        comma_match = re.search(
+            rf"\b([A-Z][A-Za-z .-]{{1,45}})\s*,\s*({US_STATE_TEXT_PATTERN})\s*(\d{{5}}(?:-\d{{4}})?)?",
+            text,
+            flags=re.I,
+        )
+        if comma_match:
+            return {
+                "city": cls._clean_city_for_tag(comma_match.group(1)),
+                "state": cls._clean_state_for_display(comma_match.group(2)),
+                "zip_code": comma_match.group(3) or "",
+            }
+        no_comma_match = re.search(
+            rf"\b([A-Z][A-Za-z .-]{{1,45}})\s+({US_STATE_TEXT_PATTERN})\s+(\d{{5}}(?:-\d{{4}})?)\b",
+            text,
+            flags=re.I,
+        )
+        if no_comma_match:
+            return {
+                "city": cls._clean_city_for_tag(no_comma_match.group(1)),
+                "state": cls._clean_state_for_display(no_comma_match.group(2)),
+                "zip_code": no_comma_match.group(3) or "",
+            }
+        zip_match = re.search(r"\b(\d{5}(?:-\d{4})?)\b", text)
+        return {"zip_code": zip_match.group(1) if zip_match else ""}
+
+    @classmethod
+    def _infer_city_tag(cls, lead: Dict[str, Any], *, item: VelitQueueItem) -> str:
+        direct_city = cls._clean_city_for_tag(lead.get("city"))
+        if direct_city:
+            return direct_city
+        location = cls._first_export_value(lead.get("location"), lead.get("address"), lead.get("location_evidence"), item.location)
+        if location:
+            for part in location.split(","):
+                city_from_location = cls._clean_city_for_tag(part)
+                if city_from_location:
+                    return city_from_location
+        evidence_sources = [
+            lead.get("location_evidence"),
+            lead.get("address"),
+            lead.get("notes"),
+            lead.get("lead_summary"),
+            lead.get("value_proposition"),
+        ]
+        for source in (_clean_cell(value) for value in evidence_sources):
+            if not source:
+                continue
+            parsed_city = cls._extract_location_parts_from_text(source).get("city", "")
+            if parsed_city:
+                return parsed_city
+            phrase_match = re.search(
+                rf"\b(?:in|near|around|serving|based in|located in)\s+([A-Z][A-Za-z .-]{{1,40}})(?:,|\s+{US_STATE_TEXT_PATTERN}\b)",
+                source,
+            )
+            phrase_city = cls._clean_city_for_tag(phrase_match.group(1)) if phrase_match else ""
+            if phrase_city:
+                return phrase_city
+        searchable = " ".join(
+            _clean_cell(value)
+            for value in (
+                lead.get("notes"),
+                lead.get("address"),
+                lead.get("location"),
+                lead.get("location_evidence"),
+                lead.get("lead_summary"),
+                lead.get("value_proposition"),
+                lead.get("company_name"),
+                lead.get("company_website"),
+                item.location,
+            )
+            if _clean_cell(value)
+        )
+        comma_match = re.search(rf"\b([A-Z][A-Za-z .-]{{1,40}})\s*,\s*{US_STATE_TEXT_PATTERN}\b", searchable)
+        comma_city = cls._clean_city_for_tag(comma_match.group(1)) if comma_match else ""
+        if comma_city:
+            return comma_city
+        phrase_match = re.search(
+            rf"\b(?:in|near|around|serving|based in|located in)\s+([A-Z][A-Za-z .-]{{1,40}})(?:,|\s+{US_STATE_TEXT_PATTERN}\b)",
+            searchable,
+        )
+        phrase_city = cls._clean_city_for_tag(phrase_match.group(1)) if phrase_match else ""
+        return phrase_city or "unknown-city"
+
+    @classmethod
+    def _infer_business_type_tag(cls, lead: Dict[str, Any], *, item: VelitQueueItem) -> str:
+        searchable = " ".join(
+            _clean_cell(value)
+            for value in (
+                lead.get("industry"),
+                lead.get("specialty"),
+                lead.get("notes"),
+                lead.get("lead_summary"),
+                lead.get("value_proposition"),
+                lead.get("company_name"),
+                lead.get("company_website"),
+                item.industry,
+            )
+            if _clean_cell(value)
+        ).lower()
+        for tag, patterns in BUSINESS_TYPE_RULES:
+            if any(pattern in searchable for pattern in patterns):
+                return tag
+        item_industry = cls._normalize_tag_part(item.industry)
+        if any(pattern in item_industry for pattern in ("velit", "upfitter", "upfitters", "upfit", "rv builder", "rv builders", "van builder", "van builders")):
+            return "upfitter"
+        return "unknown-business-type"
 
     @staticmethod
     def _style_sheet(sheet: Any) -> None:

@@ -142,6 +142,10 @@ async def _fallback_response(
             "errors": [str(exc)],
         }
 
+    fallback_leads = prod_result.get("leads") if isinstance(prod_result.get("leads"), list) else []
+    fallback_errors = [str(error) for error in (prod_result.get("errors") or []) if str(error).strip()]
+    fallback_warnings = [str(warning) for warning in (prod_result.get("warnings") or []) if str(warning).strip()]
+    fallback_success = bool(prod_result.get("success", True)) or bool(fallback_leads)
     fallback_steps = [
         {
             "name": "hunter_credit_preflight",
@@ -151,8 +155,8 @@ async def _fallback_response(
         *(prod_result.get("steps") or []),
     ]
     return {
-        "success": True,
-        "leads": prod_result.get("leads", []),
+        "success": fallback_success,
+        "leads": fallback_leads,
         "steps": fallback_steps,
         "metadata": {
             **(prod_result.get("metadata") or {}),
@@ -160,12 +164,15 @@ async def _fallback_response(
             "fallback_used": True,
             "fallback_reason": fallback_reason,
             "fallback_pipeline": pipeline_name,
+            "fallback_pipeline_success": fallback_success,
+            "fallback_lead_count": len(fallback_leads),
+            "fallback_errors": fallback_errors,
             "mode": _normalize_mode(request.mode),
             "hunter_credit_status": credit_status,
             "warning": FALLBACK_WARNING,
         },
-        "errors": [],
-        "warnings": [FALLBACK_WARNING],
+        "errors": fallback_errors,
+        "warnings": [FALLBACK_WARNING, *fallback_warnings],
         "fallback_used": True,
         "fallback_warning": FALLBACK_WARNING,
     }

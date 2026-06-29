@@ -569,7 +569,11 @@
     function renderTable() {
       const leads = state.leads || [];
       if (!leads.length) {
-        leadsTbody.innerHTML = '<tr><td colspan="6" class="px-5 py-16 text-center text-sm text-lv-400">No Hunter leads returned yet.</td></tr>';
+        const metadata = state.metadata || {};
+        const emptyMessage = metadata.fallback_used
+          ? 'Fallback search returned no leads. Check Railway deploy logs and env keys for Tavily/Gemini errors.'
+          : 'No Hunter leads returned yet.';
+        leadsTbody.innerHTML = `<tr><td colspan="6" class="px-5 py-16 text-center text-sm text-lv-400">${escapeHtml(emptyMessage)}</td></tr>`;
         return;
       }
 
@@ -668,6 +672,9 @@
           showFallbackBanner(data.fallback_warning);
           addLog(escapeHtml(data.fallback_warning || 'Hunter fallback active.'), 'warning');
           addLog(`Returned ${state.leads.length} fallback leads.`, state.leads.length ? 'success' : 'info');
+          if (!state.leads.length) {
+            addLog('Fallback returned 0 leads. Check Railway deploy logs for Tavily/Gemini errors and confirm TAVILY_API_KEY plus GOOGLE_API_KEY or GEMINI_API_KEY are set.', 'error');
+          }
         } else {
           addLog(`Returned ${state.leads.length} Hunter leads.`, state.leads.length ? 'success' : 'info');
         }

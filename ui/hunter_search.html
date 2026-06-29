@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentic Core - Hunter Search (Test)</title>
+  <meta name="description" content="Hunter.io test pipeline for B2B lead discovery." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lv: {
+              50: '#f5f5ff',
+              100: '#ececff',
+              200: '#d9d9ff',
+              300: '#c1c1ff',
+              400: '#a3a3ff',
+              500: '#8181ff',
+              600: '#6363ff',
+              700: '#5252e6',
+              800: '#4545c0',
+              900: '#3a3a9b',
+              950: '#1a1a3a',
+            }
+          },
+          fontFamily: { outfit: ['Outfit', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --bg-main: #090b14;
+      --bg-grad-a: rgba(99,102,241,.13);
+      --bg-grad-b: rgba(34,211,238,.10);
+      --text-main: #eef2ff;
+      --glass-bg: rgba(12, 17, 34, 0.82);
+      --glass-border: rgba(129,129,255,.16);
+      --field-bg: rgba(7,12,24,.88);
+      --field-border: rgba(129,129,255,.24);
+      --field-text: #eef2ff;
+      --field-placeholder: rgba(191,219,254,.34);
+      --row-hover: rgba(129,129,255,.09);
+      --scroll-thumb: #32405f;
+      --scroll-thumb-hover: #44567d;
+      --btn-text: #12182d;
+    }
+
+    body.light-theme {
+      --bg-main: #eef3ff;
+      --bg-grad-a: rgba(79,70,229,.22);
+      --bg-grad-b: rgba(14,116,144,.12);
+      --text-main: #111827;
+      --glass-bg: rgba(255, 255, 255, 0.98);
+      --glass-border: rgba(71,85,105,.24);
+      --field-bg: #f8fafc;
+      --field-border: rgba(100,116,139,.42);
+      --field-text: #0f172a;
+      --field-placeholder: rgba(71,85,105,.78);
+      --row-hover: rgba(219,234,254,.78);
+      --scroll-thumb: #64748b;
+      --scroll-thumb-hover: #475569;
+      --btn-text: #ffffff;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Outfit', sans-serif;
+      background-image:
+        radial-gradient(ellipse at 5% 10%, var(--bg-grad-a) 0%, transparent 50%),
+        radial-gradient(ellipse at 95% 90%, var(--bg-grad-b) 0%, transparent 50%);
+      min-height: 100vh;
+      transition: background-color .25s ease, color .25s ease;
+    }
+
+    .glass {
+      background: var(--glass-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--glass-border);
+      transition: background .25s ease, border-color .25s ease;
+    }
+
+    .btn-run {
+      background: linear-gradient(135deg, #fb923c 0%, #f97316 45%, #67e8f9 100%);
+      background-size: 200% 200%;
+      background-position: left center;
+      transition: background-position .4s ease, transform .2s ease, box-shadow .2s ease;
+      box-shadow: 0 4px 20px rgba(249,115,22,.32);
+      color: var(--btn-text);
+      font-weight: 700;
+    }
+    .btn-run:hover:not(:disabled) {
+      background-position: right center;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(249,115,22,.42);
+    }
+    .btn-run:disabled { opacity: .55; cursor: not-allowed; }
+
+    .field {
+      width: 100%;
+      background: var(--field-bg);
+      border: 1px solid var(--field-border);
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: var(--field-text);
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field::placeholder { color: var(--field-placeholder); }
+    .field:focus {
+      border-color: rgba(249,115,22,.62);
+      box-shadow: 0 0 0 3px rgba(249,115,22,.12);
+    }
+
+    .lead-row { transition: background .15s ease; }
+    .lead-row:hover { background: var(--row-hover); }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+    .log-entry { animation: fadeSlideIn .25s ease forwards; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chip {
+      display: inline-block;
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(249,115,22,.12);
+      color: #fed7aa;
+      white-space: nowrap;
+    }
+
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #fb923c;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .4; transform: scale(.7); }
+    }
+
+    #progress-bar {
+      height: 2px;
+      background: linear-gradient(90deg, #fb923c, #67e8f9);
+      border-radius: 2px;
+      transition: width .4s ease;
+    }
+
+    .theme-toggle {
+      border: 1px solid rgba(129,129,255,.18);
+      background: rgba(99,102,241,.10);
+      color: inherit;
+    }
+
+    body.light-theme .glass {
+      box-shadow: 0 18px 44px rgba(15, 23, 42, 0.11);
+    }
+    body.light-theme .theme-toggle {
+      background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(238,242,255,.94));
+      border-color: rgba(99,102,241,.24);
+      color: #1e293b;
+    }
+    body.light-theme .chip {
+      background: rgba(249,115,22,.13);
+      color: #9a3412;
+    }
+    body.light-theme nav {
+      background: rgba(255,255,255,.96);
+      border-color: rgba(148,163,184,.35) !important;
+      box-shadow: 0 10px 28px rgba(15,23,42,.08);
+    }
+    body.light-theme nav h1 {
+      background: none !important;
+      -webkit-text-fill-color: #312e81;
+      color: #312e81 !important;
+    }
+    body.light-theme section.glass,
+    body.light-theme .glass.rounded-3xl,
+    body.light-theme .glass.rounded-\[28px\] {
+      background: #ffffff;
+      border-color: rgba(148,163,184,.38);
+    }
+    body.light-theme table,
+    body.light-theme tbody {
+      background: #ffffff;
+      color: #0f172a;
+    }
+    body.light-theme thead tr {
+      background: #dbe4f0 !important;
+      border-color: rgba(100,116,139,.34) !important;
+    }
+    body.light-theme thead th {
+      color: #1f2a44 !important;
+      font-weight: 800 !important;
+    }
+    body.light-theme tbody tr { border-color: rgba(203,213,225,.85) !important; }
+    body.light-theme .btn-run {
+      background: linear-gradient(135deg, #ea580c 0%, #f97316 50%, #0891b2 100%);
+      color: #ffffff;
+      box-shadow: 0 12px 28px rgba(234,88,12,.22);
+    }
+    body.light-theme .text-white { color: #111827 !important; }
+    body.light-theme .hover\:text-white:hover { color: #0f172a !important; }
+    body.light-theme .text-lv-100,
+    body.light-theme .text-lv-200 { color: #111827 !important; }
+    body.light-theme .text-lv-300 { color: #24324a !important; }
+    body.light-theme .text-lv-300\/60 { color: rgba(36, 50, 74, 0.86) !important; }
+    body.light-theme .text-lv-300\/70 { color: rgba(36, 50, 74, 0.9) !important; }
+    body.light-theme .text-lv-400 { color: #334155 !important; }
+    body.light-theme .text-lv-500 { color: #475569 !important; }
+    body.light-theme .bg-lv-950\/35 { background: #f1f5f9 !important; }
+    body.light-theme .bg-lv-950\/40 { background: #eef2f7 !important; }
+    body.light-theme .bg-lv-900\/40 { background: #eef2f7 !important; }
+    body.light-theme .border-lv-500\/10 { border-color: rgba(148,163,184,.34) !important; }
+    body.light-theme .border-lv-500\/20 { border-color: rgba(100,116,139,.36) !important; }
+    body.light-theme .border-lv-900\/50 { border-color: rgba(148, 163, 184, 0.34) !important; }
+    body.light-theme .text-green-400 { color: #047857 !important; }
+    body.light-theme .text-amber-300,
+    body.light-theme .text-amber-400 { color: #a16207 !important; }
+    body.light-theme .text-sky-200,
+    body.light-theme .text-sky-400 { color: #0369a1 !important; }
+    body.light-theme .text-red-400 { color: #b91c1c !important; }
+  </style>
+</head>
+<body>
+  <nav class="glass sticky top-0 z-50 px-8 py-4 flex items-center justify-between border-b border-lv-900/50">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-orange-700 flex items-center justify-center shadow-lg shadow-orange-500/25">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7l2 14h10l2-14M9 7V5a3 3 0 116 0v2"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-lv-100 to-orange-300">Agentic Core</h1>
+        <p class="text-[10px] text-lv-400/60 uppercase tracking-[.18em] font-semibold">Hunter.io Test Pipeline</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="theme-toggle-btn" class="theme-toggle px-4 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2">
+        <span id="theme-toggle-icon">Light</span>
+        <span id="theme-toggle-label">Mode</span>
+      </button>
+      <a href="/leads" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+        </svg>
+        Leads
+      </a>
+      <a href="/" class="text-xs text-lv-300/60 hover:text-white transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3"/>
+        </svg>
+        Dashboard
+      </a>
+    </div>
+  </nav>
+
+  <main class="max-w-[1600px] mx-auto px-8 py-8 grid grid-cols-12 gap-7">
+    <div class="col-span-12 lg:col-span-4 space-y-5">
+      <section class="glass rounded-3xl p-6 shadow-2xl">
+        <h2 class="text-base font-semibold mb-5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-5 bg-gradient-to-b from-orange-400 to-orange-600 rounded-full"></span>
+            Discovery Parameters
+          </div>
+          <div id="mode-badge" class="text-[9px] px-2 py-0.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-300 font-bold uppercase tracking-widest">Hunter.io</div>
+        </h2>
+
+        <div class="space-y-4">
+          <div>
+            <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Industry</label>
+            <input id="industry-input" type="text" class="field" placeholder="e.g. SaaS, Fintech, Solar Energy" />
+          </div>
+          <div>
+            <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Location</label>
+            <input id="location-input" type="text" class="field" placeholder="e.g. London, San Francisco, Mumbai" />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Target Leads</label>
+              <input id="lead-count-input" type="number" min="1" max="100" value="15" class="field" placeholder="15" />
+            </div>
+            <div>
+              <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Target Role</label>
+              <input id="role-input" type="text" class="field" placeholder="e.g. Founder, CEO, Marketing Head" />
+            </div>
+          </div>
+
+          <div id="progress-wrap" class="hidden pt-1 px-1">
+            <div class="w-full bg-lv-900/40 rounded-full h-0.5">
+              <div id="progress-bar" style="width:0%"></div>
+            </div>
+          </div>
+
+          <button id="start-btn" class="btn-run w-full py-4 rounded-2xl text-sm flex items-center justify-center gap-2 mt-2">
+            <svg id="loader-icon" class="hidden animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <span id="btn-text">Generate Leads</span>
+          </button>
+        </div>
+      </section>
+
+      <div class="grid grid-cols-1 sm:grid-cols-4 lg:grid-cols-2 gap-3">
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-orange-400">
+          <div class="text-[10px] text-orange-300 uppercase font-bold tracking-wider">Leads Found</div>
+          <div id="leads-count" class="text-2xl font-bold mt-0.5">0</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-sky-400">
+          <div class="text-[10px] text-sky-400 uppercase font-bold tracking-wider">Time Elapsed</div>
+          <div id="timer" class="text-2xl font-bold mt-0.5">0s</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-green-400">
+          <div class="text-[10px] text-green-400 uppercase font-bold tracking-wider">Usable Leads</div>
+          <div id="usable-count" class="text-2xl font-bold mt-0.5">0</div>
+        </div>
+        <div class="glass rounded-2xl px-4 py-3 border-l-4 border-l-amber-400">
+          <div class="text-[10px] text-amber-400 uppercase font-bold tracking-wider">Verified Leads</div>
+          <div id="verified-count" class="text-2xl font-bold mt-0.5">0</div>
+        </div>
+      </div>
+
+      <section class="glass rounded-3xl p-5 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-[11px] font-bold uppercase tracking-wider text-lv-400">Pipeline Observability</h2>
+          <span class="text-[9px] px-2 py-0.5 rounded bg-orange-500/10 border border-orange-500/20 text-orange-300 font-bold uppercase tracking-wider">Hunter</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Domains Searched</div>
+            <div id="obs-domains" class="text-xl font-bold text-white mt-1">0</div>
+          </div>
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Emails Found</div>
+            <div id="obs-emails" class="text-xl font-bold text-amber-300 mt-1">0</div>
+          </div>
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Verified</div>
+            <div id="obs-verified" class="text-xl font-bold text-green-400 mt-1">0</div>
+          </div>
+          <div class="rounded-2xl border border-lv-500/10 bg-lv-950/35 px-3 py-2">
+            <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold">Returned</div>
+            <div id="obs-returned" class="text-xl font-bold text-sky-200 mt-1">0</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-lv-500 font-bold mb-2">Run Log</div>
+          <div id="log" class="max-h-72 overflow-auto space-y-2 pr-1 text-[11px] text-lv-200"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-span-12 lg:col-span-8 space-y-5">
+      <section class="glass rounded-[28px] overflow-hidden shadow-2xl">
+        <div class="px-6 py-5 border-b border-lv-500/10 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+              Hunter Search Results
+              <span id="running-indicator" class="hidden pulse-dot"></span>
+            </h2>
+            <p class="text-xs text-lv-400 mt-1">Standalone Hunter.io Domain Search, Email Finder, and Email Verifier test run.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="export-xlsx-btn" class="px-3 py-2 rounded-xl bg-lv-950/40 border border-lv-500/20 text-xs font-semibold hover:bg-lv-900/40 transition-colors">Export .XLSX</button>
+            <button id="contact-export-btn" class="px-3 py-2 rounded-xl bg-lv-950/40 border border-lv-500/20 text-xs font-semibold hover:bg-lv-900/40 transition-colors">Contact .XLSX</button>
+            <button id="export-json-btn" class="px-3 py-2 rounded-xl bg-lv-950/40 border border-lv-500/20 text-xs font-semibold hover:bg-lv-900/40 transition-colors">Export JSON</button>
+          </div>
+        </div>
+
+        <div class="overflow-auto">
+          <table class="w-full text-left min-w-[1050px]">
+            <thead>
+              <tr class="bg-lv-950/40 border-b border-lv-500/10">
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Company</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Person / Role</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Contact / Quality</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Location</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Lead Summary</th>
+                <th class="px-5 py-4 text-[10px] uppercase tracking-widest text-lv-400 font-bold">Source URLs</th>
+              </tr>
+            </thead>
+            <tbody id="leads-tbody" class="divide-y divide-lv-500/10">
+              <tr>
+                <td colspan="6" class="px-5 py-16 text-center text-sm text-lv-400">Run a Hunter search to populate this table.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const state = {
+      running: false,
+      startedAt: null,
+      timerId: null,
+      leads: [],
+      metadata: {},
+    };
+
+    const industryInput = document.getElementById('industry-input');
+    const locationInput = document.getElementById('location-input');
+    const leadCountInput = document.getElementById('lead-count-input');
+    const roleInput = document.getElementById('role-input');
+    const startBtn = document.getElementById('start-btn');
+    const btnText = document.getElementById('btn-text');
+    const loaderIcon = document.getElementById('loader-icon');
+    const progressWrap = document.getElementById('progress-wrap');
+    const progressBar = document.getElementById('progress-bar');
+    const runningIndicator = document.getElementById('running-indicator');
+    const logEl = document.getElementById('log');
+    const leadsTbody = document.getElementById('leads-tbody');
+    const leadsCount = document.getElementById('leads-count');
+    const timerEl = document.getElementById('timer');
+    const usableCount = document.getElementById('usable-count');
+    const verifiedCount = document.getElementById('verified-count');
+    const obsDomains = document.getElementById('obs-domains');
+    const obsEmails = document.getElementById('obs-emails');
+    const obsVerified = document.getElementById('obs-verified');
+    const obsReturned = document.getElementById('obs-returned');
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    const themeToggleIcon = document.getElementById('theme-toggle-icon');
+    const themeToggleLabel = document.getElementById('theme-toggle-label');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function firstValue(...values) {
+      for (const value of values) {
+        const cleaned = String(value ?? '').trim();
+        if (cleaned) return cleaned;
+      }
+      return '';
+    }
+
+    function addLog(message, type = 'info') {
+      const colors = {
+        info: 'border-lv-500/20 bg-lv-950/35 text-lv-200',
+        success: 'border-green-500/20 bg-green-500/10 text-green-300',
+        error: 'border-red-500/20 bg-red-500/10 text-red-300',
+      };
+      const div = document.createElement('div');
+      div.className = `log-entry rounded-xl border px-3 py-2 ${colors[type] || colors.info}`;
+      div.innerHTML = message;
+      logEl.prepend(div);
+    }
+
+    function setRunning(running) {
+      state.running = running;
+      startBtn.disabled = running;
+      loaderIcon.classList.toggle('hidden', !running);
+      runningIndicator.classList.toggle('hidden', !running);
+      progressWrap.classList.toggle('hidden', !running);
+      btnText.textContent = running ? 'Searching Hunter.io...' : 'Generate Leads';
+      if (running) {
+        progressBar.style.width = '18%';
+        state.startedAt = Date.now();
+        state.timerId = setInterval(updateTimer, 250);
+      } else {
+        progressBar.style.width = '100%';
+        clearInterval(state.timerId);
+        state.timerId = null;
+        updateTimer();
+        setTimeout(() => progressWrap.classList.add('hidden'), 700);
+      }
+    }
+
+    function updateTimer() {
+      if (!state.startedAt) {
+        timerEl.textContent = '0s';
+        return;
+      }
+      const seconds = Math.max(0, Math.round((Date.now() - state.startedAt) / 1000));
+      timerEl.textContent = `${seconds}s`;
+      if (state.running) {
+        const width = Math.min(88, 18 + seconds * 8);
+        progressBar.style.width = `${width}%`;
+      }
+    }
+
+    function updateStats() {
+      const leads = state.leads || [];
+      const metadata = state.metadata || {};
+      leadsCount.textContent = leads.length;
+      usableCount.textContent = leads.filter(lead => lead.usable || Number(lead.quality_score || 0) >= 40).length;
+      verifiedCount.textContent = leads.filter(lead => String(firstValue(lead.email_verification_status, lead.verification_status)).toLowerCase().includes('valid') || String(firstValue(lead.email_verification_status, lead.verification_status)).toLowerCase().includes('verified')).length;
+      obsDomains.textContent = metadata.domains_searched || 0;
+      obsEmails.textContent = metadata.emails_found || leads.filter(lead => lead.contact_email).length;
+      obsVerified.textContent = metadata.emails_verified || 0;
+      obsReturned.textContent = metadata.returned || leads.length;
+    }
+
+    function sourceLinks(lead) {
+      const urls = [];
+      if (Array.isArray(lead.source_urls)) urls.push(...lead.source_urls);
+      if (lead.company_website) urls.push(lead.company_website);
+      if (lead.linkedin_url) urls.push(lead.linkedin_url);
+      return [...new Set(urls.filter(Boolean))];
+    }
+
+    function renderTable() {
+      const leads = state.leads || [];
+      if (!leads.length) {
+        leadsTbody.innerHTML = '<tr><td colspan="6" class="px-5 py-16 text-center text-sm text-lv-400">No Hunter leads returned yet.</td></tr>';
+        return;
+      }
+
+      leadsTbody.innerHTML = leads.map(lead => {
+        const company = firstValue(lead.company_name, lead.domain, 'Unknown company');
+        const website = firstValue(lead.company_website);
+        const person = firstValue(lead.contact_person_name, lead.founder_name, 'Unknown contact');
+        const role = firstValue(lead.contact_person_title, roleInput.value, 'Target contact');
+        const email = firstValue(lead.contact_email, 'No email returned');
+        const phone = firstValue(lead.contact_phone, lead.phone);
+        const score = Number(lead.quality_score || lead.email_confidence || 0);
+        const location = firstValue(lead.location, [lead.city, lead.state].filter(Boolean).join(', '), 'Unknown');
+        const summary = firstValue(lead.lead_summary, lead.value_proposition, lead.notes, 'Hunter.io returned this company as a candidate lead.');
+        const links = sourceLinks(lead);
+        const status = firstValue(lead.email_verification_status, lead.verification_status, 'hunter');
+
+        return `
+          <tr class="lead-row align-top">
+            <td class="px-5 py-5">
+              <div class="font-semibold text-white">${escapeHtml(company)}</div>
+              ${website ? `<a href="${escapeHtml(website)}" target="_blank" rel="noopener" class="text-xs text-sky-400 hover:text-sky-300">${escapeHtml(website)}</a>` : ''}
+              <div class="mt-2"><span class="chip">${escapeHtml(firstValue(lead.source, 'hunter_domain_search'))}</span></div>
+            </td>
+            <td class="px-5 py-5">
+              <div class="font-medium text-lv-100">${escapeHtml(person)}</div>
+              <div class="text-xs text-lv-400 mt-1">${escapeHtml(role)}</div>
+              ${lead.linkedin_url ? `<a href="${escapeHtml(lead.linkedin_url)}" target="_blank" rel="noopener" class="text-xs text-sky-400 hover:text-sky-300 mt-2 inline-block">LinkedIn</a>` : ''}
+            </td>
+            <td class="px-5 py-5">
+              <div class="text-sm text-lv-100">${escapeHtml(email)}</div>
+              ${phone ? `<div class="text-xs text-lv-400 mt-1">${escapeHtml(phone)}</div>` : ''}
+              <div class="mt-2 flex items-center gap-2">
+                <span class="text-[10px] px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-300 font-bold">${score}/100</span>
+                <span class="text-[10px] px-2 py-1 rounded-lg bg-lv-500/10 border border-lv-500/20 text-lv-300">${escapeHtml(status)}</span>
+              </div>
+            </td>
+            <td class="px-5 py-5 text-sm text-lv-200">${escapeHtml(location)}</td>
+            <td class="px-5 py-5 text-sm text-lv-200 max-w-xs">${escapeHtml(summary)}</td>
+            <td class="px-5 py-5">
+              <div class="space-y-1">
+                ${links.length ? links.map(url => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="block text-xs text-sky-400 hover:text-sky-300 truncate max-w-[210px]">${escapeHtml(url)}</a>`).join('') : '<span class="text-xs text-lv-500">No source URL</span>'}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function runLeadGen() {
+      if (state.running) return;
+      const industry = industryInput.value.trim();
+      const location = locationInput.value.trim();
+      if (!industry || !location) {
+        addLog('Please enter both industry and location.', 'error');
+        return;
+      }
+
+      state.leads = [];
+      state.metadata = {};
+      renderTable();
+      updateStats();
+      setRunning(true);
+      logEl.innerHTML = '';
+      addLog(`Starting Hunter.io search for ${escapeHtml(industry)} in ${escapeHtml(location)}.`, 'info');
+
+      try {
+        const res = await fetch('/api/hunter/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            industry: industryInput.value.trim(),
+            location: locationInput.value.trim(),
+            seed_query: '',
+            target_count: Number(leadCountInput.value || 15),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || `Request failed with ${res.status}`);
+        }
+
+        state.leads = Array.isArray(data.leads) ? data.leads : [];
+        state.metadata = data.metadata || {};
+        renderTable();
+        updateStats();
+        addLog(`Returned ${state.leads.length} Hunter leads.`, state.leads.length ? 'success' : 'info');
+
+        for (const step of data.steps || []) {
+          addLog(`${escapeHtml(step.name || 'step')}: ${escapeHtml(step.message || step.status || 'completed')}`, 'info');
+        }
+        for (const err of data.errors || state.metadata.errors || []) {
+          addLog(escapeHtml(err), 'error');
+        }
+      } catch (err) {
+        addLog(`Hunter search failed: ${escapeHtml(err.message || err)}`, 'error');
+      } finally {
+        setRunning(false);
+      }
+    }
+
+    function exportRows() {
+      return state.leads.map(lead => ({
+        company_name: firstValue(lead.company_name),
+        contact_person_name: firstValue(lead.contact_person_name, lead.founder_name),
+        contact_person_title: firstValue(lead.contact_person_title),
+        contact_email: firstValue(lead.contact_email),
+        contact_phone: firstValue(lead.contact_phone, lead.phone),
+        quality_score: firstValue(lead.quality_score),
+        email_confidence: firstValue(lead.email_confidence),
+        email_verification_status: firstValue(lead.email_verification_status, lead.verification_status),
+        company_website: firstValue(lead.company_website),
+        linkedin_url: firstValue(lead.linkedin_url),
+        industry: firstValue(lead.industry),
+        location: firstValue(lead.location),
+        city: firstValue(lead.city),
+        state: firstValue(lead.state),
+        source: firstValue(lead.source),
+        lead_summary: firstValue(lead.lead_summary, lead.value_proposition, lead.notes),
+      }));
+    }
+
+    function ensureXlsxExportAvailable() {
+      if (window.XLSX) return true;
+      addLog('Excel export library is not loaded yet. Refresh and try again.', 'error');
+      return false;
+    }
+
+    function exportAsXlsx(rows, filename) {
+      if (!ensureXlsxExportAvailable()) return;
+      if (!rows.length) {
+        addLog('No leads to export yet.', 'error');
+        return;
+      }
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
+      XLSX.writeFile(workbook, filename, { compression: true });
+      addLog(`Exported ${rows.length} leads as Excel .xlsx.`, 'success');
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function hasCompleteContactDetails(lead) {
+      const email = String(lead.contact_email || '').trim();
+      const phoneDigits = String(firstValue(lead.contact_phone, lead.phone)).replace(/\D/g, '');
+      const website = String(lead.company_website || '').trim();
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email) && phoneDigits.length >= 10 && Boolean(website);
+    }
+
+    document.getElementById('export-xlsx-btn').addEventListener('click', () => {
+      exportAsXlsx(exportRows(), `hunter_leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    });
+
+    document.getElementById('contact-export-btn').addEventListener('click', () => {
+      const contactRows = state.leads.filter(hasCompleteContactDetails).map(lead => exportRowsForLead(lead));
+      exportAsXlsx(contactRows, `hunter_contact_leads_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    });
+
+    function exportRowsForLead(lead) {
+      return {
+        'Name (Required)': firstValue(lead.contact_person_name, lead.founder_name, lead.company_name),
+        'Email (Required)': firstValue(lead.contact_email),
+        'Company Name': firstValue(lead.company_name),
+        Designation: firstValue(lead.contact_person_title),
+        Phone: firstValue(lead.contact_phone, lead.phone),
+        Industry: firstValue(lead.industry),
+        Notes: firstValue(lead.notes, lead.lead_summary, lead.value_proposition),
+        Tags: [firstValue(lead.city, 'unknown-city'), firstValue(lead.industry, 'unknown-business-type').toLowerCase().replaceAll(' ', '-')].join(', '),
+        'Contact Type': 'potential customer',
+        'Email Status': firstValue(lead.email_verification_status, lead.verification_status),
+        Website: firstValue(lead.company_website),
+        'Person LinkedIn': firstValue(lead.linkedin_url),
+        'Lead Summary': firstValue(lead.lead_summary, lead.value_proposition),
+        City: firstValue(lead.city),
+        State: firstValue(lead.state),
+        Status: firstValue(lead.status, 'New'),
+      };
+    }
+
+    document.getElementById('export-json-btn').addEventListener('click', () => {
+      if (!state.leads.length) {
+        addLog('No leads to export yet.', 'error');
+        return;
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(state.leads, null, 2)], { type: 'application/json' }),
+        `hunter_leads_${new Date().toISOString().slice(0, 10)}.json`,
+      );
+      addLog(`Exported ${state.leads.length} leads as JSON.`, 'success');
+    });
+
+    function applyTheme(isLight) {
+      document.body.classList.toggle('light-theme', isLight);
+      themeToggleIcon.textContent = isLight ? 'Dark' : 'Light';
+      themeToggleLabel.textContent = 'Mode';
+      localStorage.setItem('hunter-search-theme', isLight ? 'light' : 'dark');
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      applyTheme(!document.body.classList.contains('light-theme'));
+    });
+
+    startBtn.addEventListener('click', runLeadGen);
+    [industryInput, locationInput, leadCountInput, roleInput].forEach(el => {
+      el.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !state.running) runLeadGen();
+      });
+    });
+
+    applyTheme(localStorage.getItem('hunter-search-theme') === 'light');
+  </script>
+</body>
+</html>

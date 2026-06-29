@@ -11,9 +11,10 @@ COPY api/ ./api/
 COPY core/ ./core/
 COPY config/ ./config/
 COPY workflows/ ./workflows/
+COPY ui/ ./ui/
 
-# Create logs directory
-RUN mkdir -p logs
+# Create runtime directories
+RUN mkdir -p logs data exports
 
 # Railway assigns PORT dynamically, default to 8000 for local
 ENV PORT=8000

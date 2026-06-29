@@ -32,10 +32,16 @@ def _is_local_host(host: str) -> bool:
     return value in {"localhost", "127.0.0.1", "::1"} or value.endswith(".localhost")
 
 
+def is_production_mode(value: Optional[str] = None) -> bool:
+    return _clean(value or os.getenv("APP_ENV") or os.getenv("ENVIRONMENT")).lower() in {"prod", "production"}
+
+
 def is_valid_api_key(
     configured_key: Optional[str],
     header_value: Optional[str],
     authorization: Optional[str],
+    *,
+    require_key: bool = False,
 ) -> bool:
     """Validate an inbound API key.
 
@@ -44,7 +50,7 @@ def is_valid_api_key(
     """
     expected = _clean(configured_key)
     if not expected:
-        return True
+        return not require_key
 
     expected_bytes = expected.encode("utf-8")
     candidates = [_clean(header_value), _bearer_token(authorization)]
@@ -81,10 +87,11 @@ async def api_key_middleware(request: Request, call_next):
 
     header_name = os.getenv("AGENTIC_CORE_API_KEY_HEADER", DEFAULT_API_KEY_HEADER)
     configured_key = os.getenv("AGENTIC_CORE_API_KEY")
+    require_key = is_production_mode()
     header_value = request.headers.get(header_name)
     authorization = request.headers.get("authorization")
 
-    if not is_valid_api_key(configured_key, header_value, authorization):
+    if not is_valid_api_key(configured_key, header_value, authorization, require_key=require_key):
         return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
     return await call_next(request)

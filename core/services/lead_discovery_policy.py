@@ -16,10 +16,33 @@ TRUSTED_DIRECTORY_DOMAINS = (
     "bbb.org",
 )
 
+EXCLUDED_LEAD_SOURCE_DOMAINS = (
+    "reddit.com",
+    "old.reddit.com",
+    "new.reddit.com",
+    "quora.com",
+    "medium.com",
+    "substack.com",
+    "facebook.com",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "pinterest.com",
+    "glassdoor.com",
+    "indeed.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "yelp.com",
+    "tripadvisor.com",
+)
+
 _QUERY_TEMPLATES = (
-    '"{industry}" companies in "{location}" -directory -blog -jobs -yelp -glassdoor',
-    '"{industry}" "{location}" "contact us" "email" OR "phone"',
-    '"{industry}" "{location}" official website -directory -blog -news -jobs',
+    '"{industry}" companies in "{location}" -directory -blog -jobs -yelp -glassdoor -reddit -quora -forum',
+    '"{industry}" "{location}" "contact us" "email" OR "phone" -reddit -quora -forum',
+    '"{industry}" "{location}" official website -directory -blog -news -jobs -reddit -quora -forum',
 )
 
 _GOOD_DIRECTORY_PATH_MARKERS = (
@@ -147,6 +170,16 @@ def is_whitelisted_directory_url(url: str) -> bool:
         return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
 
     return any(marker in path for marker in _GOOD_DIRECTORY_PATH_MARKERS)
+
+
+def is_excluded_lead_source_url(url: str) -> bool:
+    parsed = urlparse(url or "")
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return True
+    return any(host == domain or host.endswith(f".{domain}") for domain in EXCLUDED_LEAD_SOURCE_DOMAINS)
 
 
 def looks_like_bad_directory_path(url: str) -> bool:

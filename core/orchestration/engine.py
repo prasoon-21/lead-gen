@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from config.loader import ConfigLoader
 from config.schemas import WorkflowNodeSpec, WorkflowSpec
 from core.agents.factory import AgentFactory
-from core.orchestration.node_registry import NodeRegistry
+from core.orchestration.node_registry import NodeRegistry, build_default_node_registry
 from core.orchestration.state import get_path, map_inputs, map_outputs, set_path
 
 
@@ -43,12 +43,12 @@ class WorkflowEngine:
         self,
         config_loader: ConfigLoader,
         agent_factory: AgentFactory,
-        node_registry: NodeRegistry,
+        node_registry: Optional[NodeRegistry] = None,
         token_tracker=None,
     ):
         self.config_loader = config_loader
         self.agent_factory = agent_factory
-        self.node_registry = node_registry
+        self.node_registry = node_registry or build_default_node_registry(resources={})
         self.token_tracker = token_tracker
         self._runtime_logger = logging.getLogger("agent.runtime")
 

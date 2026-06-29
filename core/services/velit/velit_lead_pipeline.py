@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from core.services.lead_discovery_policy import EXCLUDED_LEAD_SOURCE_DOMAINS, is_excluded_lead_source_url
 from core.services.lead_quality_service import score_lead
 from core.services.lead_quality_gate import apply_quality_gate
 from core.services.production_lead_pipeline import (
@@ -847,6 +848,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                         "query": query,
                         "search_depth": VELIT_SEARCH_DEPTH,
                         "max_results": self.max_search_results_per_query,
+                        "exclude_domains": list(EXCLUDED_LEAD_SOURCE_DOMAINS),
                         "include_raw_content": False,
                     }
                 )
@@ -858,6 +860,8 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 title = str(item.get("title") or "").strip()
                 content = str(item.get("content") or "").strip()
                 if not url or url in seen_urls:
+                    continue
+                if is_excluded_lead_source_url(url):
                     continue
                 if is_noise_url(url) and not looks_like_velit_text(f"{title} {content}"):
                     continue
@@ -961,6 +965,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                             "query": query,
                             "search_depth": VELIT_SEARCH_DEPTH,
                             "max_results": 6,
+                            "exclude_domains": list(EXCLUDED_LEAD_SOURCE_DOMAINS),
                             "include_raw_content": False,
                         }
                     ),
@@ -970,7 +975,7 @@ class VelitLeadPipeline(ProductionLeadPipeline):
                 continue
             for item in data.get("results") or []:
                 url = str(item.get("url") or "").strip()
-                if not url or is_noise_url(url):
+                if not url or is_excluded_lead_source_url(url) or is_noise_url(url):
                     continue
                 title = str(item.get("title") or "").strip()
                 content = str(item.get("content") or "").strip()

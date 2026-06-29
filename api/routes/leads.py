@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any
+import inspect
 import json
 import os
 from api.state import get_state
@@ -85,6 +86,18 @@ async def get_existing_leads(mode: str = "generic"):
         import logging
         logging.getLogger("api.leads").warning(f"Failed to fetch existing companies: {e}")
         return {"companies": []}
+
+
+@router.get("/details")
+async def get_lead_details():
+    state = get_state()
+    if not state.todo_store:
+        raise HTTPException(status_code=500, detail="Google Sheets storage not configured")
+
+    list_leads = state.todo_store.list_leads
+    if inspect.iscoroutinefunction(list_leads):
+        return await list_leads()
+    return await run_in_threadpool(list_leads)
 
 @router.post("/linkedin_session")
 async def update_linkedin_session(request: LinkedInSessionRequest):

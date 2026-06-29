@@ -580,10 +580,11 @@ class TodoSheetStore:
     @classmethod
     def _build_lead_metadata(cls, lead: Dict[str, Any]) -> Dict[str, Any]:
         source_value = lead.get("source", "")
+        source_metadata = source_value if isinstance(source_value, (list, dict)) else str(source_value).strip()
         metadata = {
             "linkedin_url": str(lead.get("linkedin_url", "")).strip(),
             "contact_page": str(lead.get("contact_page", "")).strip(),
-            "source": str(source_value).strip(),
+            "source": source_metadata,
             "source_details": lead.get("source_details", []) or [],
             "confidence": str(lead.get("confidence", "")).strip(),
             "quality_score": lead.get("quality_score", 0),

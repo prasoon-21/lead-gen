@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from typing import Any, Dict, List, Set
 from urllib.parse import urlparse
 
@@ -26,6 +27,12 @@ class LeadService:
     def _domain_from_email(email: str) -> str:
         parts = (email or "").split("@", 1)
         return parts[1].lower().strip() if len(parts) == 2 else ""
+
+    @staticmethod
+    async def _call_store(method, *args):
+        if inspect.iscoroutinefunction(method):
+            return await method(*args)
+        return await asyncio.to_thread(method, *args)
 
     @classmethod
     def _company_key(cls, lead: Dict[str, Any]) -> str:
@@ -186,9 +193,9 @@ class LeadService:
         - LinkedIn URL
         - same person + same company
         """
-        await asyncio.to_thread(self.todo_store.ensure_store)
+        await self._call_store(self.todo_store.ensure_store)
 
-        existing_rows = await asyncio.to_thread(self.todo_store.list_leads)
+        existing_rows = await self._call_store(self.todo_store.list_leads)
         existing_registry = self._empty_key_registry()
         for row in existing_rows:
             self._register_keys(existing_registry, row)
@@ -212,7 +219,7 @@ class LeadService:
                 duplicate_reasons[duplicate_reason] = duplicate_reasons.get(duplicate_reason, 0) + 1
                 continue
 
-            await asyncio.to_thread(self.todo_store.save_lead, lead)
+            await self._call_store(self.todo_store.save_lead, lead)
             added_count += 1
             exported_leads.append(lead)
             self._register_keys(existing_registry, lead)
@@ -233,8 +240,8 @@ class LeadService:
         """
         Fetch existing company names from the leads worksheet for duplicate-checking.
         """
-        await asyncio.to_thread(self.todo_store.ensure_store)
-        rows = await asyncio.to_thread(self.todo_store.list_leads)
+        await self._call_store(self.todo_store.ensure_store)
+        rows = await self._call_store(self.todo_store.list_leads)
         companies: List[str] = []
         seen = set()
         for row in rows:

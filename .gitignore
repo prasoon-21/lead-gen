@@ -30,6 +30,13 @@ linkedin_session*.json
 logs/
 !logs/README.md
 *.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+playwright-report/
+test-results/
 tmp_*
 *.tmp
 *.bak

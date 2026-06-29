@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 from core.services.lead_discovery_policy import (
     DEFAULT_TAVILY_SEARCH_DEPTH,
+    EXCLUDED_LEAD_SOURCE_DOMAINS,
     clamp_web_search_max_results,
 )
 from core.tools.base import BaseTool, ToolContext, ToolExecutionError
@@ -53,6 +54,7 @@ class WebSearchTool(BaseTool):
         "\"{industry}\" \"{location}\" founder",
     )
     _default_excluded_domains = (
+        *EXCLUDED_LEAD_SOURCE_DOMAINS,
         "linkedin.com",
         "www.linkedin.com",
         "facebook.com",

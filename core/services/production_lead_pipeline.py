@@ -17,8 +17,10 @@ from google.genai import types as genai_types
 from core.services.lead_discovery_policy import (
     DEFAULT_TAVILY_EXTRACT_DEPTH,
     DEFAULT_TAVILY_SEARCH_DEPTH,
+    EXCLUDED_LEAD_SOURCE_DOMAINS,
     build_targeted_directory_queries,
     filter_whitelisted_directory_results,
+    is_excluded_lead_source_url,
 )
 from core.services.lead_quality_service import score_lead
 from core.services.lead_quality_gate import apply_quality_gate
@@ -314,6 +316,7 @@ class ProductionLeadPipeline:
                         "query": query,
                         "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
                         "max_results": 10,
+                        "exclude_domains": list(EXCLUDED_LEAD_SOURCE_DOMAINS),
                         "include_raw_content": False,
                     }
                 )
@@ -323,6 +326,8 @@ class ProductionLeadPipeline:
             for item in data.get("results") or []:
                 url = str(item.get("url") or "").strip()
                 if not url or url in seen_urls:
+                    continue
+                if is_excluded_lead_source_url(url):
                     continue
                 seen_urls.add(url)
                 results.append(
@@ -1086,8 +1091,14 @@ class ProductionLeadPipeline:
                 return item
 
             linkedin_url = str(item.get("linkedin_url") or "").strip()
-            linkedin_candidate: Dict[str, str] = {}
-            if not linkedin_url:
+            if linkedin_url and not self._is_person_linkedin_url(linkedin_url):
+                if self._is_company_linkedin_url(linkedin_url):
+                    item["company_linkedin_url"] = self._first_non_empty(item.get("company_linkedin_url"), linkedin_url)
+                item["linkedin_url"] = ""
+                linkedin_url = ""
+
+            linkedin_candidate: Dict[str, Any] = {}
+            if not linkedin_url and not self._first_non_empty(item.get("contact_person_name"), item.get("founder_name")):
                 try:
                     linkedin_candidate = await asyncio.wait_for(
                         self._find_linkedin_candidate_for_company(
@@ -1101,13 +1112,17 @@ class ProductionLeadPipeline:
                     linkedin_candidate = {}
                 linkedin_url = str(linkedin_candidate.get("url") or "").strip()
                 if linkedin_url:
-                    item["linkedin_url"] = linkedin_url
+                    if self._is_person_linkedin_url(linkedin_url):
+                        item["linkedin_url"] = linkedin_url
+                    elif self._is_company_linkedin_url(linkedin_url):
+                        item["company_linkedin_url"] = self._first_non_empty(item.get("company_linkedin_url"), linkedin_url)
+                        linkedin_url = ""
                     item.setdefault("source_details", []).append(
                         {
                             "stage": "linkedin_search",
                             "type": "linkedin_search_result",
                             "provider": "tavily_search",
-                            "url": linkedin_url,
+                            "url": self._first_non_empty(linkedin_candidate.get("url"), linkedin_url),
                             "value": self._first_non_empty(
                                 linkedin_candidate.get("person_name"),
                                 linkedin_candidate.get("title_hint"),
@@ -1128,6 +1143,13 @@ class ProductionLeadPipeline:
                     item.get("founder_name"),
                 ):
                     item = self._merge_linkedin_search_fallback(item, linkedin_candidate)
+                if not self._first_non_empty(item.get("contact_person_name"), item.get("founder_name")):
+                    slug_name = self._extract_person_name_from_linkedin_result(title="", content="", url=linkedin_url)
+                    if slug_name:
+                        item = self._merge_linkedin_search_fallback(
+                            item,
+                            {"url": linkedin_url, "person_name": slug_name, "title_hint": ""},
+                        )
             return item
 
         enriched_results = await asyncio.gather(
@@ -1229,11 +1251,13 @@ class ProductionLeadPipeline:
             ai_score.get("person_title"),
             ai_score.get("contact_person_title"),
         )
-        linkedin_url = self._first_non_empty(
-            *(contact_signals.get("linkedin_urls") or [])[:1],
+        linkedin_candidates = [
+            *(contact_signals.get("linkedin_urls") or []),
             ai_score.get("linkedin_url"),
             self._first_linkedin_url(text),
-        )
+        ]
+        person_linkedin_url = self._first_person_linkedin_url(linkedin_candidates)
+        company_linkedin_url = self._first_company_linkedin_url(linkedin_candidates)
         location_evidence = self._location_evidence_excerpt(text=f"{title}\n{text}", location=location)
         city_state_text_parts = []
         if ai_score.get("city"):
@@ -1274,7 +1298,8 @@ class ProductionLeadPipeline:
             "phone_validation_status": self._first_non_empty(scraped_phone_summary.get("phone_validation_status"), phone_summary.get("phone_validation_status")),
             "phone_type": self._first_non_empty(scraped_phone_summary.get("phone_type"), phone_summary.get("phone_type")),
             "phone_candidates": scraped_phone_summary.get("phone_candidates") or phone_summary.get("phone_candidates", []),
-            "linkedin_url": linkedin_url,
+            "linkedin_url": person_linkedin_url,
+            "company_linkedin_url": company_linkedin_url,
             "contact_page": url,
             "source": "trusted_directory",
             "source_details": [
@@ -1321,45 +1346,71 @@ class ProductionLeadPipeline:
         company_name: str,
         industry: str,
         location: str,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         cleaned_name = str(company_name or "").strip()
         if not cleaned_name:
             return {}
 
-        query = f'site:linkedin.com "{cleaned_name}" founder OR ceo OR owner'
-        best_company_candidate: Dict[str, str] = {}
-        try:
-            data = await self.tavily.search(
-                {
-                    "query": query,
-                    "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
-                    "max_results": 6,
-                    "include_raw_content": False,
-                }
-            )
-        except Exception as exc:
-            self.logger.info("lead_pipeline_linkedin_search_failed", extra={"payload": str(exc)})
-            return {}
-
-        for result in data.get("results") or []:
-            candidate_url = str(result.get("url") or "").strip()
-            if not candidate_url or "linkedin.com/" not in candidate_url:
+        best_person_candidate: Dict[str, Any] = {}
+        best_company_candidate: Dict[str, Any] = {}
+        for query in self._linkedin_person_search_queries(
+            company_name=cleaned_name,
+            industry=industry,
+            location=location,
+        ):
+            try:
+                data = await self.tavily.search(
+                    {
+                        "query": query,
+                        "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
+                        "max_results": 8,
+                        "include_raw_content": False,
+                    }
+                )
+            except Exception as exc:
+                self.logger.info("lead_pipeline_linkedin_search_failed", extra={"payload": str(exc)})
                 continue
-            title = str(result.get("title") or "").strip()
-            content = str(result.get("content") or "").strip()
-            if "linkedin.com/in/" in candidate_url:
-                return {
-                    "url": candidate_url,
-                    "person_name": self._extract_person_name_from_linkedin_result(title=title, content=content),
-                    "title_hint": self._extract_person_title_from_linkedin_result(title=title, content=content),
-                }
-            if "linkedin.com/company/" in candidate_url and not best_company_candidate:
-                best_company_candidate = {
-                    "url": candidate_url,
-                    "person_name": "",
-                    "title_hint": "",
-                }
-        return best_company_candidate
+
+            for result in data.get("results") or []:
+                candidate_url = str(result.get("url") or "").strip()
+                if not candidate_url or "linkedin.com/" not in candidate_url:
+                    continue
+                title = str(result.get("title") or "").strip()
+                content = str(result.get("content") or "").strip()
+                if self._is_person_linkedin_url(candidate_url):
+                    candidate = {
+                        "url": candidate_url,
+                        "person_name": self._extract_person_name_from_linkedin_result(
+                            title=title,
+                            content=content,
+                            url=candidate_url,
+                        ),
+                        "title_hint": self._extract_person_title_from_linkedin_result(title=title, content=content),
+                        "query": query,
+                    }
+                    candidate["score"] = self._score_linkedin_person_candidate(
+                        candidate,
+                        title=title,
+                        content=content,
+                        company_name=cleaned_name,
+                        industry=industry,
+                        location=location,
+                    )
+                    if int(candidate.get("score") or 0) > int(best_person_candidate.get("score") or 0):
+                        best_person_candidate = candidate
+                elif self._is_company_linkedin_url(candidate_url) and not best_company_candidate:
+                    best_company_candidate = {
+                        "url": candidate_url,
+                        "person_name": "",
+                        "title_hint": "",
+                        "query": query,
+                        "score": 10,
+                    }
+
+            if best_person_candidate.get("person_name") and int(best_person_candidate.get("score") or 0) >= 100:
+                break
+
+        return best_person_candidate or best_company_candidate
 
     async def _run_linkedin_research(self, *, linkedin_url: str, company_name: str, website_url: str) -> Dict[str, Any]:
         context = ToolContext(
@@ -1377,7 +1428,18 @@ class ProductionLeadPipeline:
                         "url": linkedin_url,
                         "company_name": company_name,
                         "website_url": website_url,
-                        "target_roles": ["founder", "owner", "ceo", "director", "managing director"],
+                        "target_roles": [
+                            "founder",
+                            "co-founder",
+                            "owner",
+                            "ceo",
+                            "president",
+                            "principal",
+                            "partner",
+                            "director",
+                            "managing director",
+                            "operations manager",
+                        ],
                         "allow_fallback_contact_paths": True,
                     },
                     context,
@@ -1396,6 +1458,16 @@ class ProductionLeadPipeline:
         linkedin_company_name = cls._clean_company_candidate(str(linkedin_data.get("company_name") or ""))
         if not cls._looks_like_valid_company_name(linkedin_company_name):
             linkedin_company_name = ""
+        raw_linkedin_url = cls._first_non_empty(
+            linkedin_data.get("linkedin_url"),
+            linkedin_data.get("profile_url"),
+        )
+        person_linkedin_url = raw_linkedin_url if cls._is_person_linkedin_url(raw_linkedin_url) else ""
+        company_linkedin_url = cls._first_non_empty(
+            linkedin_data.get("company_linkedin_url"),
+            linkedin_data.get("linkedin_company_url"),
+            raw_linkedin_url if cls._is_company_linkedin_url(raw_linkedin_url) else "",
+        )
         merged.update(
             {
                 "company_name": cls._first_non_empty(linkedin_company_name, merged.get("company_name")),
@@ -1418,7 +1490,8 @@ class ProductionLeadPipeline:
                 ),
                 "contact_email": cls._first_non_empty(merged.get("contact_email"), linkedin_data.get("contact_email")),
                 "contact_phone": cls._first_non_empty(merged.get("contact_phone"), linkedin_data.get("contact_phone")),
-                "linkedin_url": cls._first_non_empty(linkedin_data.get("linkedin_url"), merged.get("linkedin_url")),
+                "linkedin_url": cls._first_non_empty(person_linkedin_url, merged.get("linkedin_url")),
+                "company_linkedin_url": cls._first_non_empty(company_linkedin_url, merged.get("company_linkedin_url")),
                 "contact_page": cls._first_non_empty(merged.get("contact_page"), linkedin_data.get("contact_page")),
                 "source": cls._first_non_empty(merged.get("source"), linkedin_data.get("source"), "linkedin"),
                 "value_proposition": cls._first_non_empty(
@@ -1443,7 +1516,7 @@ class ProductionLeadPipeline:
                 "stage": "linkedin_enrichment",
                 "type": "linkedin_research",
                 "provider": "linkedin_research",
-                "url": cls._first_non_empty(linkedin_data.get("linkedin_url"), merged.get("linkedin_url")),
+                "url": cls._first_non_empty(person_linkedin_url, company_linkedin_url, merged.get("linkedin_url")),
                 "value": cls._first_non_empty(linkedin_data.get("contact_person_name"), linkedin_data.get("full_name")),
             }
         )
@@ -1459,19 +1532,22 @@ class ProductionLeadPipeline:
         merged = dict(lead)
         person_name = cls._first_non_empty(linkedin_candidate.get("person_name"))
         title_hint = cls._first_non_empty(linkedin_candidate.get("title_hint"))
+        candidate_url = cls._first_non_empty(linkedin_candidate.get("url"))
         if person_name:
             merged["contact_person_name"] = cls._first_non_empty(merged.get("contact_person_name"), person_name)
             merged["founder_name"] = cls._first_non_empty(merged.get("founder_name"), person_name)
         if title_hint:
             merged["contact_person_title"] = cls._first_non_empty(merged.get("contact_person_title"), title_hint)
-        if linkedin_candidate.get("url"):
-            merged["linkedin_url"] = cls._first_non_empty(merged.get("linkedin_url"), linkedin_candidate.get("url"))
+        if candidate_url and cls._is_person_linkedin_url(candidate_url):
+            merged["linkedin_url"] = cls._first_non_empty(merged.get("linkedin_url"), candidate_url)
+        elif candidate_url and cls._is_company_linkedin_url(candidate_url):
+            merged["company_linkedin_url"] = cls._first_non_empty(merged.get("company_linkedin_url"), candidate_url)
         merged.setdefault("source_details", []).append(
             {
                 "stage": "linkedin_search_fallback",
                 "type": "linkedin_search_name_hint",
                 "provider": "tavily_search",
-                "url": cls._first_non_empty(linkedin_candidate.get("url"), merged.get("linkedin_url")),
+                "url": cls._first_non_empty(candidate_url, merged.get("linkedin_url"), merged.get("company_linkedin_url")),
                 "value": person_name,
             }
         )
@@ -1856,6 +1932,42 @@ class ProductionLeadPipeline:
             )
         )
 
+    @staticmethod
+    def _generic_company_words() -> set[str]:
+        return {
+            "a",
+            "an",
+            "and",
+            "the",
+            "company",
+            "custom",
+            "commercial",
+            "conversion",
+            "conversions",
+            "camper",
+            "rv",
+            "van",
+            "vans",
+            "vehicle",
+            "vehicles",
+            "upfitter",
+            "upfitters",
+            "builder",
+            "builders",
+            "truck",
+            "trucks",
+            "trailer",
+            "trailers",
+            "service",
+            "services",
+            "solutions",
+            "interiors",
+            "equipment",
+            "fleet",
+            "body",
+            "bodies",
+        }
+
     @classmethod
     def _company_name_from_url(cls, url: str) -> str:
         parsed = urlparse(url or "")
@@ -1952,6 +2064,7 @@ class ProductionLeadPipeline:
         if host.startswith("www."):
             host = host[4:]
         noisy_domains = (
+            *EXCLUDED_LEAD_SOURCE_DOMAINS,
             "clutch.co",
             "glassdoor.co.in",
             "chamberofcommerce.com",
@@ -2175,13 +2288,110 @@ class ProductionLeadPipeline:
         return match.group(0).strip() if match else ""
 
     @classmethod
-    def _extract_person_name_from_linkedin_result(cls, *, title: str, content: str) -> str:
+    def _first_person_linkedin_url(cls, values: Iterable[Any]) -> str:
+        for value in values or []:
+            cleaned = cls._first_non_empty(value)
+            if cleaned and cls._is_person_linkedin_url(cleaned):
+                return cleaned
+        return ""
+
+    @classmethod
+    def _first_company_linkedin_url(cls, values: Iterable[Any]) -> str:
+        for value in values or []:
+            cleaned = cls._first_non_empty(value)
+            if cleaned and cls._is_company_linkedin_url(cleaned):
+                return cleaned
+        return ""
+
+    @staticmethod
+    def _is_person_linkedin_url(value: str) -> bool:
+        return bool(re.search(r"linkedin\.com/(?:in|pub)/", value or "", flags=re.IGNORECASE))
+
+    @staticmethod
+    def _is_company_linkedin_url(value: str) -> bool:
+        return bool(re.search(r"linkedin\.com/(?:company|showcase)/", value or "", flags=re.IGNORECASE))
+
+    @classmethod
+    def _linkedin_person_search_queries(cls, *, company_name: str, industry: str, location: str) -> List[str]:
+        cleaned_company = re.sub(r"\s+", " ", str(company_name or "")).strip()
+        cleaned_industry = re.sub(r"\s+", " ", str(industry or "")).strip()
+        cleaned_location = re.sub(r"\s+", " ", str(location or "")).strip()
+        role_terms = "founder owner ceo president principal partner director"
+        queries = [
+            f'site:linkedin.com/in "{cleaned_company}" {role_terms}',
+        ]
+        if cleaned_location:
+            queries.append(f'site:linkedin.com/in "{cleaned_company}" "{cleaned_location}" founder owner ceo')
+        if cleaned_industry:
+            queries.append(f'site:linkedin.com/in "{cleaned_company}" "{cleaned_industry}" owner founder')
+        queries.append(f'site:linkedin.com/company "{cleaned_company}"')
+        return list(dict.fromkeys(query for query in queries if query.strip()))
+
+    @classmethod
+    def _score_linkedin_person_candidate(
+        cls,
+        candidate: Dict[str, Any],
+        *,
+        title: str,
+        content: str,
+        company_name: str,
+        industry: str,
+        location: str,
+    ) -> int:
+        url = cls._first_non_empty(candidate.get("url"))
+        person_name = cls._first_non_empty(candidate.get("person_name"))
+        title_hint = cls._first_non_empty(candidate.get("title_hint"))
+        combined = f"{title} {content} {url}".lower()
+        compact_combined = re.sub(r"[^a-z0-9]+", "", combined)
+        score = 0
+        if cls._is_person_linkedin_url(url):
+            score += 55
+        if person_name:
+            score += 35
+        if title_hint:
+            score += 10
+        if re.search(r"\b(founder|co-founder|owner|ceo|president|principal|partner|director|managing director|operations manager)\b", combined):
+            score += 25
+        company_tokens = [
+            token
+            for token in re.findall(r"[a-z0-9]+", company_name.lower())
+            if len(token) >= 3 and token not in cls._generic_company_words()
+        ]
+        if company_tokens and any(token in combined or token in compact_combined for token in company_tokens):
+            score += 25
+        industry_tokens = [token for token in re.findall(r"[a-z0-9]+", industry.lower()) if len(token) >= 4]
+        if industry_tokens and any(token in combined for token in industry_tokens):
+            score += 5
+        location_tokens = [token for token in re.findall(r"[a-z0-9]+", location.lower()) if len(token) >= 4]
+        if location_tokens and any(token in combined for token in location_tokens):
+            score += 5
+        return score
+
+    @classmethod
+    def _extract_person_name_from_linkedin_result(cls, *, title: str, content: str, url: str = "") -> str:
         title_clean = re.sub(r"\s+", " ", str(title or "")).strip()
         content_clean = re.sub(r"\s+", " ", str(content or "")).strip()
-        for candidate in (
-            title_clean.split("|", 1)[0].split("-", 1)[0].strip(),
+        title_without_linkedin = re.sub(r"\s*(?:\||-)\s*LinkedIn.*$", "", title_clean, flags=re.IGNORECASE).strip()
+        profile_patterns = [
+            r"View\s+(.+?)'s\s+profile\s+on\s+LinkedIn",
+            r"(.+?)\s+-\s+[^|]+?\s+-\s+LinkedIn",
+            r"(.+?)\s+\|\s+LinkedIn",
+        ]
+        candidates = [
+            title_without_linkedin.split("|", 1)[0].split("-", 1)[0].strip(),
             content_clean.split("\n", 1)[0].strip(),
-        ):
+        ]
+        for pattern in profile_patterns:
+            for source in (title_clean, content_clean):
+                match = re.search(pattern, source, flags=re.IGNORECASE)
+                if match:
+                    candidates.append(match.group(1).strip())
+        slug_name = cls._person_name_from_linkedin_slug(url)
+        if slug_name:
+            candidates.append(slug_name)
+
+        for candidate in candidates:
+            candidate = cls._clean_linkedin_name_candidate(candidate)
             if not candidate:
                 continue
             if cls._looks_like_person_name(candidate):
@@ -2192,13 +2402,50 @@ class ProductionLeadPipeline:
     def _extract_person_title_from_linkedin_result(cls, *, title: str, content: str) -> str:
         title_clean = re.sub(r"\s+", " ", str(title or "")).strip()
         content_clean = re.sub(r"\s+", " ", str(content or "")).strip()
+        title_without_linkedin = re.sub(r"\s*(?:\||-)\s*LinkedIn.*$", "", title_clean, flags=re.IGNORECASE).strip()
+        title_parts = [part.strip() for part in re.split(r"\s+-\s+", title_without_linkedin) if part.strip()]
+        role_pattern = (
+            r"\b(?:Founder|Co-Founder|Owner|CEO|Chief Executive Officer|President|Principal|Partner|"
+            r"Managing Director|Director|Operations Manager|General Manager|Business Development Manager)"
+            r"(?:\s+(?:at|of|for)\s+[^.|\n]{2,80})?"
+        )
         for candidate in (
-            title_clean.split("-", 1)[1].strip() if "-" in title_clean else "",
+            title_parts[1] if len(title_parts) >= 2 else "",
+            *(match.group(0) for match in re.finditer(role_pattern, f"{title_clean} {content_clean}", flags=re.IGNORECASE)),
             cls._first_sentence(content_clean),
         ):
-            if candidate and 4 <= len(candidate) <= 160:
+            candidate = re.sub(r"\s*(?:\||-)\s*LinkedIn.*$", "", candidate, flags=re.IGNORECASE).strip(" -|,")
+            if re.search(r"\bview\s+.+profile\s+on\s+linkedin\b", candidate, flags=re.IGNORECASE):
+                continue
+            if candidate and 4 <= len(candidate) <= 160 and not cls._looks_like_person_name(candidate):
                 return candidate
         return ""
+
+    @staticmethod
+    def _clean_linkedin_name_candidate(value: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" -|,")
+        cleaned = re.sub(r"(?i)\b(view|profile|linkedin|professional profile)\b", " ", cleaned)
+        cleaned = re.sub(r"(?i)\b(founder|co-founder|owner|ceo|president|principal|partner|director|manager)\b.*$", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" -|,")
+        return cleaned
+
+    @classmethod
+    def _person_name_from_linkedin_slug(cls, url: str) -> str:
+        parsed = urlparse(url or "")
+        path_parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(path_parts) < 2 or path_parts[0].lower() not in {"in", "pub"}:
+            return ""
+        slug = re.sub(r"[-_]*[0-9a-f]{5,}$", "", path_parts[1].lower())
+        slug = re.sub(r"[-_]*\d+.*$", "", slug)
+        parts = [
+            part
+            for part in re.split(r"[^a-zA-Z]+", slug)
+            if len(part) >= 2 and part not in cls._linkedin_name_banned_words()
+        ]
+        if len(parts) < 2 or len(parts) > 4:
+            return ""
+        candidate = " ".join(part.capitalize() for part in parts)
+        return candidate if cls._looks_like_person_name(candidate) else ""
 
     @staticmethod
     def _first_sentence(text: str) -> str:
@@ -2216,11 +2463,54 @@ class ProductionLeadPipeline:
         words = [part for part in cleaned.split() if part]
         if len(words) < 2 or len(words) > 5:
             return False
-        banned = {"linkedin", "founder", "director", "ceo", "owner", "contact", "email", "phone", "number"}
+        banned = ProductionLeadPipeline._linkedin_name_banned_words()
         lowered = {word.lower() for word in words}
         if lowered & banned:
             return False
+        if re.search(r"\b(llc|inc|ltd|corp|corporation|company|co\.?|group|services|solutions)\b", cleaned, flags=re.I):
+            return False
         return all(word[:1].isalpha() for word in words)
+
+    @staticmethod
+    def _linkedin_name_banned_words() -> set[str]:
+        return {
+            "linkedin",
+            "founder",
+            "co-founder",
+            "director",
+            "ceo",
+            "owner",
+            "president",
+            "principal",
+            "partner",
+            "manager",
+            "contact",
+            "email",
+            "phone",
+            "number",
+            "company",
+            "llc",
+            "inc",
+            "corp",
+            "corporation",
+            "group",
+            "services",
+            "solutions",
+            "truck",
+            "trucks",
+            "van",
+            "fleet",
+            "upfit",
+            "upfitter",
+            "upfitters",
+            "vehicle",
+            "vehicles",
+            "equipment",
+            "commercial",
+            "body",
+            "bodies",
+            "profile",
+        }
 
     @classmethod
     def _official_site_candidate_score(

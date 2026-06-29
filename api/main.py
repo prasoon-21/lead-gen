@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -15,7 +15,6 @@ from api.routes import (
     admin, agent_directory, studio, leads, email_verification,
     velit_batch_scheduler,
 )
-from api.routes._test_features import hunter_search as hunter_search_route  # TEST FEATURE
 from core.adapters.router import build_adapter_from_env
 from core.retrieval.embeddings import EmbeddingService
 from core.logging.tracker import TokenTracker
@@ -32,10 +31,35 @@ load_dotenv()
 setup_runtime_logging()
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _production_mode() -> bool:
+    return (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower() in {"prod", "production"}
+
+
 def _parse_allowed_origins(raw_origins: str | None) -> list[str]:
-    if not raw_origins:
-        return ["*"]
-    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    origins = [origin.strip() for origin in (raw_origins or "").split(",") if origin.strip()]
+    if origins:
+        return origins
+    if _production_mode():
+        public_base_url = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+        railway_domain = (os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+        production_origins = []
+        if public_base_url:
+            production_origins.append(public_base_url)
+        if railway_domain:
+            production_origins.append(f"https://{railway_domain}")
+        return production_origins
+    return ["*"]
+
+
+def _include_optional_route(feature_name: str, default: bool = False) -> bool:
+    return _env_bool(feature_name, default)
 
 
 @asynccontextmanager
@@ -212,6 +236,8 @@ async def velit_batch_scheduler_page():
 
 @app.get("/hunter-search", include_in_schema=False)  # TEST FEATURE
 async def hunter_search_page():
+    if not _include_optional_route("ENABLE_HUNTER_TEST_PIPELINE", True):
+        raise HTTPException(status_code=404, detail="Hunter test pipeline is disabled")
     return FileResponse("ui/hunter_search.html")
 
 
@@ -229,4 +255,11 @@ app.include_router(studio.router,            prefix="/api/studio",            ta
 app.include_router(leads.router,             prefix="/api/leads",             tags=["Leads"])
 app.include_router(email_verification.router, prefix="/api/email-verification", tags=["Email Verification"])
 app.include_router(velit_batch_scheduler.router, prefix="/api/velit-batch", tags=["Velit Batch Scheduler"])
-app.include_router(hunter_search_route.router, prefix="/api/hunter", tags=["Hunter Search (Test)"])  # TEST FEATURE
+
+if _include_optional_route("ENABLE_HUNTER_TEST_PIPELINE", True):
+    try:
+        from api.routes._test_features import hunter_search as hunter_search_route  # noqa: WPS433
+
+        app.include_router(hunter_search_route.router, prefix="/api/hunter", tags=["Hunter Search (Test)"])
+    except Exception as exc:
+        print(f"Hunter test pipeline disabled because it could not be imported: {exc}")

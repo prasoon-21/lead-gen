@@ -807,10 +807,19 @@
       return { zip_code: zipMatch ? zipMatch[1] : '' };
     }
 
+    function searchLocationParts() {
+      const searchedLocation = cleanExportValue(locationInput?.value);
+      if (!searchedLocation) return {};
+      const parsed = extractLocationPartsFromText(searchedLocation);
+      if (parsed.city || parsed.state || parsed.zip_code) return parsed;
+      const cityFromLocation = searchedLocation.split(',').map(part => cleanCityForTag(part)).find(Boolean);
+      return cityFromLocation ? { city: cityFromLocation, state: '', zip_code: '' } : {};
+    }
+
     function inferCityTag(lead) {
       const directCity = cleanCityForTag(lead.city);
       if (directCity) return directCity;
-      const location = firstExportValue(lead.location, lead.address, lead.location_evidence);
+      const location = firstExportValue(lead.location, lead.address, lead.location_evidence, locationInput?.value);
       if (location) {
         const cityFromLocation = location.split(',').map(part => cleanCityForTag(part)).find(Boolean);
         if (cityFromLocation) return cityFromLocation;
@@ -823,7 +832,8 @@
         const phraseCity = phraseMatch ? cleanCityForTag(phraseMatch[1]) : '';
         if (phraseCity) return phraseCity;
       }
-      const searchable = [lead.notes, lead.address, lead.location, lead.location_evidence, lead.lead_summary, lead.value_proposition, lead.company_name, lead.company_website].map(cleanExportValue).filter(Boolean).join(' ');
+      const searchedLocation = cleanExportValue(locationInput?.value);
+      const searchable = [lead.notes, lead.address, lead.location, lead.location_evidence, lead.lead_summary, lead.value_proposition, lead.company_name, lead.company_website, searchedLocation].map(cleanExportValue).filter(Boolean).join(' ');
       const commaMatch = searchable.match(new RegExp('\\b([A-Z][A-Za-z .-]{1,40})\\s*,\\s*' + US_STATE_TEXT_PATTERN + '\\b'));
       const commaCity = commaMatch ? cleanCityForTag(commaMatch[1]) : '';
       if (commaCity) return commaCity;
@@ -886,9 +896,9 @@
         { header: 'Phone Confidence', value: l => firstExportValue(l.phone_confidence), keys: ['phone_confidence'] },
         { header: 'Phone Source', value: l => firstExportValue(l.phone_source), keys: ['phone_source'] },
         { header: 'Phone Status', value: l => firstExportValue(l.phone_validation_status), keys: ['phone_validation_status'] },
-        { header: 'City', value: l => firstExportValue(l.city), keys: ['city'] },
-        { header: 'State', value: l => firstExportValue(l.state), keys: ['state'] },
-        { header: 'Zip Code', value: l => firstExportValue(l.zip_code), keys: ['zip_code'] },
+        { header: 'City', value: l => firstExportValue(l.city, searchLocationParts().city), keys: ['city'] },
+        { header: 'State', value: l => firstExportValue(l.state, searchLocationParts().state), keys: ['state'] },
+        { header: 'Zip Code', value: l => firstExportValue(l.zip_code, searchLocationParts().zip_code), keys: ['zip_code'] },
         { header: 'Status', value: l => firstExportValue(l.status || 'New'), keys: ['status'] },
       ];
       const usedKeys = new Set(['email_verification', 'verification_checks', 'field_sources', 'source_details']);

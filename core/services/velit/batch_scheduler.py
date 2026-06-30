@@ -636,6 +636,28 @@ class VelitBatchScheduler:
             runs = [run for run in self.runs if run.get("automation_id") == automation.id]
             return {"runs": list(reversed(runs[-max(1, min(int(limit or 50), 200)) :]))}
 
+    async def get_run_output_file(self, run_id: str, automation_id: Optional[str] = None) -> Path:
+        async with self._lock:
+            automation = self._automation_unlocked(automation_id)
+            run = self._run_by_id_unlocked(run_id, automation.id)
+            return self._resolve_download_path_unlocked(run.get("output_file_path"))
+
+    async def get_downloadable_run_files(self, automation_id: Optional[str] = None) -> Dict[str, Any]:
+        async with self._lock:
+            automation = self._automation_unlocked(automation_id)
+            files: List[Dict[str, Any]] = []
+            for run in self.runs:
+                if run.get("automation_id") != automation.id or not run.get("output_file_path"):
+                    continue
+                with contextlib.suppress(Exception):
+                    path = self._resolve_download_path_unlocked(run.get("output_file_path"))
+                    files.append({"path": path, "run": dict(run)})
+            return {
+                "automation_id": automation.id,
+                "automation_name": automation.name,
+                "files": files,
+            }
+
     async def _run_item(self, item_id: str, *, manual: bool) -> None:
         async with self._lock:
             if self._any_running_unlocked():
@@ -1417,7 +1439,15 @@ class VelitBatchScheduler:
             return []
         try:
             runs = json.loads(RUNS_FILE.read_text(encoding="utf-8"))
-            return runs if isinstance(runs, list) else []
+            if not isinstance(runs, list):
+                return []
+            normalized_runs: List[Dict[str, Any]] = []
+            for run in runs:
+                if not isinstance(run, dict):
+                    continue
+                run.setdefault("id", uuid.uuid4().hex)
+                normalized_runs.append(run)
+            return normalized_runs
         except Exception:
             return []
 
@@ -1456,6 +1486,52 @@ class VelitBatchScheduler:
             raise KeyError(f"Automation not found: {selected_id}")
         self.active_automation_id = automation.id
         return automation
+
+    def _run_by_id_unlocked(self, run_id: str, automation_id: str) -> Dict[str, Any]:
+        selected_id = str(run_id or "").strip()
+        if not selected_id:
+            raise ValueError("Run ID is required.")
+        for run in self.runs:
+            if run.get("automation_id") == automation_id and str(run.get("id") or "") == selected_id:
+                return run
+        raise KeyError(f"Run not found: {selected_id}")
+
+    def _resolve_download_path_unlocked(self, value: Any) -> Path:
+        raw_path = str(value or "").strip()
+        if not raw_path:
+            raise ValueError("This run does not have an Excel output file.")
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        resolved = path.resolve()
+        if resolved.suffix.lower() != ".xlsx":
+            raise ValueError("Only Excel .xlsx run outputs can be downloaded.")
+        if not resolved.exists() or not resolved.is_file():
+            raise ValueError("Excel output file was not found on this server.")
+        if not self._is_allowed_download_path_unlocked(resolved):
+            raise ValueError("Excel output file is outside the configured export folders.")
+        return resolved
+
+    def _is_allowed_download_path_unlocked(self, path: Path) -> bool:
+        roots = [Path.cwd().resolve()]
+        for automation in self.automations.values():
+            roots.append(self._resolve_output_root(automation.output_folder))
+        for item in self.items:
+            roots.append(self._resolve_output_root(item.output_folder))
+        for root in roots:
+            try:
+                path.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        return False
+
+    @staticmethod
+    def _resolve_output_root(value: Any) -> Path:
+        folder = Path(str(value or DEFAULT_OUTPUT_FOLDER).strip() or DEFAULT_OUTPUT_FOLDER)
+        if not folder.is_absolute():
+            folder = Path.cwd() / folder
+        return folder.resolve()
 
     def _sorted_automations(self) -> List[VelitBatchAutomation]:
         return sorted(self.automations.values(), key=lambda item: (item.created_at or "", item.name.lower()))

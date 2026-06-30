@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import io
+import re
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse, StreamingResponse
 
 from api.state import get_state
 from core.services.velit.batch_scheduler import VelitBatchScheduler
@@ -68,6 +72,11 @@ def _raise_api_error(exc: Exception) -> None:
     if isinstance(exc, ValueError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+
+
+def _download_slug(value: str, fallback: str = "velit_exports") -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
+    return slug or fallback
 
 
 @router.get("/automation")
@@ -224,5 +233,49 @@ async def reorder_items(request: ReorderRequest, automation_id: Optional[str] = 
 async def get_runs(limit: int = 50, automation_id: Optional[str] = None) -> Dict[str, Any]:
     try:
         return await _scheduler().recent_runs(limit=limit, automation_id=automation_id)
+    except Exception as exc:
+        _raise_api_error(exc)
+
+
+@router.get("/runs/download-all")
+async def download_all_runs(automation_id: Optional[str] = None) -> StreamingResponse:
+    try:
+        payload = await _scheduler().get_downloadable_run_files(automation_id)
+        files = payload.get("files") or []
+        if not files:
+            raise ValueError("No Excel output files are available for this automation.")
+
+        archive = io.BytesIO()
+        used_names: set[str] = set()
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            for index, file_info in enumerate(files, start=1):
+                path = file_info["path"]
+                run = file_info.get("run") or {}
+                base_name = path.name
+                if base_name in used_names:
+                    base_name = f"{index:03d}_{base_name}"
+                used_names.add(base_name)
+                zip_file.write(path, arcname=base_name)
+        archive.seek(0)
+
+        filename = f"{_download_slug(payload.get('automation_name') or payload.get('automation_id'))}_excel_exports.zip"
+        return StreamingResponse(
+            archive,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as exc:
+        _raise_api_error(exc)
+
+
+@router.get("/runs/{run_id}/download")
+async def download_run(run_id: str, automation_id: Optional[str] = None) -> FileResponse:
+    try:
+        path = await _scheduler().get_run_output_file(run_id, automation_id=automation_id)
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=path.name,
+        )
     except Exception as exc:
         _raise_api_error(exc)

@@ -8,8 +8,14 @@ from urllib.parse import urlparse
 
 import httpx
 
-from core.services.lead_discovery_policy import DEFAULT_TAVILY_SEARCH_DEPTH, build_targeted_directory_queries
+from core.services.lead_discovery_policy import (
+    DEFAULT_TAVILY_SEARCH_DEPTH,
+    EXCLUDED_LEAD_SOURCE_DOMAINS,
+    build_targeted_directory_queries,
+    is_excluded_lead_source_url,
+)
 from core.services.lead_quality_service import score_lead
+from core.services.velit.discovery import build_velit_queries, looks_like_velit_text
 from core.tools.external.tavily_client import TavilyClient
 
 
@@ -274,11 +280,16 @@ class HunterSearchPipeline:
             errors.append(f"Tavily unavailable for domain discovery: {exc}")
             return []
 
-        queries = build_targeted_directory_queries(
-            industry=industry,
-            location=location,
-            seed_query=seed_query,
-            max_queries=3,
+        velit_intent = self._is_velit_intent(industry=industry, seed_query=seed_query)
+        queries = (
+            build_velit_queries(location=location, seed_query=seed_query, max_queries=8)
+            if velit_intent
+            else build_targeted_directory_queries(
+                industry=industry,
+                location=location,
+                seed_query=seed_query,
+                max_queries=3,
+            )
         )
         domains: List[str] = []
         seen = set()
@@ -289,6 +300,7 @@ class HunterSearchPipeline:
                         "query": query,
                         "search_depth": DEFAULT_TAVILY_SEARCH_DEPTH,
                         "max_results": 10,
+                        "exclude_domains": list(EXCLUDED_LEAD_SOURCE_DOMAINS),
                         "include_raw_content": False,
                     }
                 )
@@ -299,8 +311,20 @@ class HunterSearchPipeline:
                 continue
 
             for item in data.get("results") or []:
-                domain = self._domain_from_url(str(item.get("url") or ""))
+                url = str(item.get("url") or "")
+                title = str(item.get("title") or "")
+                content = str(item.get("content") or "")
+                domain = self._domain_from_url(url)
                 if not domain or domain in seen:
+                    continue
+                if is_excluded_lead_source_url(url) or self._is_excluded_domain(domain):
+                    continue
+                if velit_intent and not self._looks_like_velit_candidate(
+                    domain=domain,
+                    title=title,
+                    content=content,
+                    url=url,
+                ):
                     continue
                 seen.add(domain)
                 domains.append(domain)
@@ -495,6 +519,62 @@ class HunterSearchPipeline:
     def _name_from_domain(domain: str) -> str:
         root = (domain or "").split(".")[0]
         return root.replace("-", " ").replace("_", " ").title() if root else ""
+
+    @staticmethod
+    def _is_excluded_domain(domain: str) -> bool:
+        cleaned = (domain or "").lower().strip()
+        if cleaned.startswith("www."):
+            cleaned = cleaned[4:]
+        if not cleaned:
+            return True
+        return any(cleaned == blocked or cleaned.endswith(f".{blocked}") for blocked in EXCLUDED_LEAD_SOURCE_DOMAINS)
+
+    @staticmethod
+    def _is_velit_intent(*, industry: str, seed_query: str) -> bool:
+        text = f"{industry} {seed_query}".lower()
+        markers = (
+            "velit",
+            "camping",
+            "camper",
+            "rv",
+            "upfit",
+            "upfitter",
+            "van conversion",
+            "van builder",
+            "sprinter",
+            "overland",
+            "work truck",
+            "truck body",
+            "commercial vehicle",
+            "van shelving",
+        )
+        return any(marker in text for marker in markers)
+
+    @staticmethod
+    def _looks_like_velit_candidate(*, domain: str, title: str, content: str, url: str) -> bool:
+        evidence = f"{domain} {title} {content} {url}".lower()
+        if looks_like_velit_text(evidence):
+            return True
+        compact = evidence.replace("-", " ").replace("_", " ")
+        terms = (
+            "upfit",
+            "upfitter",
+            "van conversion",
+            "van builder",
+            "camper",
+            "sprinter",
+            "overland",
+            "rv conversion",
+            "rv builder",
+            "fleet",
+            "truck body",
+            "van shelving",
+            "commercial vehicle",
+            "work truck",
+            "vehicle equipment",
+            "mobile workspace",
+        )
+        return any(term in compact for term in terms)
 
     @staticmethod
     def _split_name(name: str) -> tuple[str, str] | None:

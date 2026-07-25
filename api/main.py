@@ -241,6 +241,12 @@ async def hunter_search_page():
     return FileResponse("ui/hunter_search.html")
 
 
+if _include_optional_route("ENABLE_COMPANY_CHAT_INTEL", False):
+    @app.get("/company-chat", include_in_schema=False)
+    async def company_chat_page():
+        return FileResponse("ui/company_chat.html")
+
+
 app.include_router(health.router,                                              tags=["Health"])
 app.include_router(learning.router,          prefix="/api/learning/chat",     tags=["Learning"])
 app.include_router(image.router,             prefix="/api/image",             tags=["Image"])
@@ -263,3 +269,20 @@ if _include_optional_route("ENABLE_HUNTER_TEST_PIPELINE", True):
         app.include_router(hunter_search_route.router, prefix="/api/hunter", tags=["Hunter Search (Test)"])
     except Exception as exc:
         print(f"Hunter test pipeline disabled because it could not be imported: {exc}")
+
+if _include_optional_route("ENABLE_COMPANY_CHAT_INTEL", False):
+    try:
+        from api.routes import company_intel as company_intel_route  # noqa: WPS433
+
+        app.include_router(company_intel_route.router, prefix="/api/company-intel", tags=["Company Intel"])
+    except Exception as exc:
+        print(f"Company intel chat disabled because it could not be imported: {exc}")
+
+# ── Removable Vento Influencer Lead Pipeline ─────────────────────────────────
+if _include_optional_route("ENABLE_VENTO_PIPELINE", True):
+    try:
+        from api.routes import vento_leads as vento_leads_route  # noqa: WPS433
+
+        app.include_router(vento_leads_route.router, prefix="/api/vento", tags=["Vento Leads"])
+    except Exception as exc:
+        print(f"Vento pipeline disabled because it could not be imported: {exc}")

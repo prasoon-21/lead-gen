@@ -76,6 +76,20 @@ class TodoSheetStore:
         "Sources", # New column for citation summary
     ]
 
+    # Vento Plan 3 is intentionally isolated from the generic B2B worksheet.
+    VENTO_LEAD_HEADERS_V3 = [
+        "Name", "Category", "Email", "Phone", "Website", "Instagram", "TikTok",
+        "Location", "Niche", "Relevance Score", "Source", "Status", "Notes", "Follower Count",
+    ]
+    VENTO_LEAD_HEADERS = VENTO_LEAD_HEADERS_V3
+    VENTO_REVIEW_HEADERS = VENTO_LEAD_HEADERS + ["Review Status", "Review Decision", "Reviewer", "Reviewed At"]
+    VENTO_DAILY_RUN_HEADERS = [
+        "Batch ID", "Run Date", "Target Location", "Raw Target", "Daily Usable Target",
+        "Raw Discovered", "Duplicates", "Accepted Count", "Level A", "Level B", "Level C",
+        "Rejected Count", "Email Ready", "DM Ready", "Shortfall", "Source Usage",
+        "Duration Seconds", "Status", "Error Summary",
+    ]
+
     AUDIT_HEADERS = [
         "event_id",
         "timestamp",
@@ -108,6 +122,9 @@ class TodoSheetStore:
         self.tasks_worksheet_name = tasks_worksheet_name or os.getenv("TODO_WORKSHEET_NAME", "tasks")
         self.audit_worksheet_name = audit_worksheet_name or os.getenv("TODO_AUDIT_WORKSHEET", "audit_log")
         self.leads_worksheet_name = os.getenv("LEADS_WORKSHEET_NAME", "leads")
+        self.vento_leads_worksheet_name = os.getenv("VENTO_LEADS_WORKSHEET_NAME", "Vento Influencers")
+        self.vento_review_worksheet_name = os.getenv("VENTO_REVIEW_WORKSHEET_NAME", "Vento Review Queue")
+        self.vento_runs_worksheet_name = os.getenv("VENTO_RUNS_WORKSHEET_NAME", "Vento Daily Runs")
 
         self._creds = None
         self._gspread_client = None
@@ -116,9 +133,15 @@ class TodoSheetStore:
         self._tasks_ws = None
         self._audit_ws = None
         self._leads_ws = None
+        self._vento_leads_ws = None
+        self._vento_review_ws = None
+        self._vento_runs_ws = None
         self._task_headers_current: List[str] = list(self.TASK_HEADERS)
         self._audit_headers_current: List[str] = list(self.AUDIT_HEADERS)
         self._lead_headers_current: List[str] = list(self.LEAD_HEADERS)
+        self._vento_lead_headers_current: List[str] = list(self.VENTO_LEAD_HEADERS)
+        self._vento_review_headers_current: List[str] = list(self.VENTO_REVIEW_HEADERS)
+        self._vento_run_headers_current: List[str] = list(self.VENTO_DAILY_RUN_HEADERS)
 
     @staticmethod
     def _now() -> str:
@@ -674,3 +697,157 @@ class TodoSheetStore:
             return base, json.loads(meta.strip())
         except Exception:
             return base, {}
+
+    # ------------------------------------------------------------------
+    # Vento-specific helpers (created only when the Vento feature is used)
+    # ------------------------------------------------------------------
+
+    def ensure_vento_store(self) -> Dict[str, Any]:
+        """Create the single isolated Vento Plan 3 worksheet."""
+        if self._spreadsheet is None:
+            self.ensure_store()
+        self._vento_leads_ws = self._ensure_worksheet(
+            self._spreadsheet,
+            self.vento_leads_worksheet_name,
+            rows=5000,
+            cols=len(self.VENTO_LEAD_HEADERS) + 5,
+        )
+        existing_headers = self._vento_leads_ws.row_values(1)
+        if existing_headers != self.VENTO_LEAD_HEADERS:
+            batch_clear = getattr(self._vento_leads_ws, "batch_clear", None)
+            if callable(batch_clear):
+                batch_clear(["1:1"])
+            elif len(existing_headers) > len(self.VENTO_LEAD_HEADERS):  # pragma: no cover - old gspread/mocks
+                self._vento_leads_ws.update("1:1", [self.VENTO_LEAD_HEADERS + [""] * (len(existing_headers) - len(self.VENTO_LEAD_HEADERS))])
+            self._vento_leads_ws.update("1:1", [self.VENTO_LEAD_HEADERS])
+        self._vento_lead_headers_current = list(self.VENTO_LEAD_HEADERS)
+        return {
+            "spreadsheet_id": self._spreadsheet.id,
+            "vento_leads_worksheet": self.vento_leads_worksheet_name,
+        }
+
+    def _require_vento_ready(self) -> None:
+        if self._vento_leads_ws is None:
+            self.ensure_vento_store()
+
+    @staticmethod
+    def _vento_cell(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, (list, dict)):
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        return str(value).strip()
+
+    @classmethod
+    def _vento_lead_row_data(cls, lead: Dict[str, Any]) -> Dict[str, str]:
+        return {
+            "Name": cls._vento_cell(lead.get("creator_name") or lead.get("business_name") or lead.get("name")),
+            "Category": cls._vento_cell(lead.get("category")),
+            "Email": cls._vento_cell(lead.get("email")),
+            "Phone": cls._vento_cell(lead.get("phone")),
+            "Website": cls._vento_cell(lead.get("website")),
+            "Instagram": cls._vento_cell(lead.get("instagram_handle") or lead.get("instagram_url")),
+            "TikTok": cls._vento_cell(lead.get("tiktok_handle") or lead.get("tiktok_url")),
+            "Location": cls._vento_cell(lead.get("location")),
+            "Niche": cls._vento_cell(lead.get("niche")),
+            "Relevance Score": cls._vento_cell(lead.get("relevance_score")),
+            "Source": cls._vento_cell(lead.get("source")),
+            "Status": cls._vento_cell(lead.get("status") or "New"),
+            "Notes": cls._vento_cell(lead.get("notes")),
+            "Follower Count": cls._vento_cell(lead.get("follower_count")),
+        }
+
+    def save_vento_lead(self, lead: Dict[str, Any]) -> Dict[str, Any]:
+        self._require_vento_ready()
+        row_data = self._vento_lead_row_data(lead)
+        row = [row_data.get(header, "") for header in self._vento_lead_headers_current]
+        self._vento_leads_ws.append_row(row, value_input_option="RAW")
+        return row_data
+
+    def save_vento_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        self._require_vento_ready()
+        rows_data = [self._vento_lead_row_data(lead) for lead in leads]
+        rows = [[item.get(header, "") for header in self._vento_lead_headers_current] for item in rows_data]
+        if rows:
+            append_rows = getattr(self._vento_leads_ws, "append_rows", None)
+            if append_rows:
+                append_rows(rows, value_input_option="RAW")
+            else:  # pragma: no cover - compatibility with older gspread/mocks
+                for row in rows:
+                    self._vento_leads_ws.append_row(row, value_input_option="RAW")
+        return rows_data
+
+    def list_vento_leads(self) -> List[Dict[str, Any]]:
+        self._require_vento_ready()
+        return [dict(row) for row in self._vento_leads_ws.get_all_records(default_blank="")]
+
+    def save_vento_review_leads(self, leads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        self._require_vento_ready()
+        rows_data: List[Dict[str, Any]] = []
+        for lead in leads:
+            row_data = self._vento_lead_row_data(lead)
+            row_data.update(
+                {
+                    "Review Status": self._vento_cell(lead.get("review_status") or "Pending"),
+                    "Review Decision": self._vento_cell(lead.get("review_decision")),
+                    "Reviewer": self._vento_cell(lead.get("reviewer")),
+                    "Reviewed At": self._vento_cell(lead.get("reviewed_at")),
+                }
+            )
+            rows_data.append(row_data)
+        rows = [[item.get(header, "") for header in self._vento_review_headers_current] for item in rows_data]
+        if rows:
+            append_rows = getattr(self._vento_review_ws, "append_rows", None)
+            if append_rows:
+                append_rows(rows, value_input_option="RAW")
+            else:  # pragma: no cover
+                for row in rows:
+                    self._vento_review_ws.append_row(row, value_input_option="RAW")
+        return rows_data
+
+    def list_vento_review_leads(self) -> List[Dict[str, Any]]:
+        self._require_vento_ready()
+        return [dict(row) for row in self._vento_review_ws.get_all_records(default_blank="")]
+
+    @classmethod
+    def _vento_run_row_data(cls, report: Dict[str, Any]) -> Dict[str, str]:
+        return {
+            "Batch ID": cls._vento_cell(report.get("batch_id")),
+            "Run Date": cls._vento_cell(report.get("run_date")),
+            "Target Location": cls._vento_cell(report.get("target_location")),
+            "Raw Target": cls._vento_cell(report.get("raw_target")),
+            "Daily Usable Target": cls._vento_cell(report.get("daily_usable_target")),
+            "Raw Discovered": cls._vento_cell(report.get("raw_discovered")),
+            "Duplicates": cls._vento_cell(report.get("duplicates")),
+            "Accepted Count": cls._vento_cell(report.get("accepted_count")),
+            "Level A": cls._vento_cell(report.get("level_a")),
+            "Level B": cls._vento_cell(report.get("level_b")),
+            "Level C": cls._vento_cell(report.get("level_c")),
+            "Rejected Count": cls._vento_cell(report.get("rejected_count")),
+            "Email Ready": cls._vento_cell(report.get("email_ready")),
+            "DM Ready": cls._vento_cell(report.get("dm_ready")),
+            "Shortfall": cls._vento_cell(report.get("shortfall")),
+            "Source Usage": cls._vento_cell(report.get("source_usage")),
+            "Duration Seconds": cls._vento_cell(report.get("duration_seconds")),
+            "Status": cls._vento_cell(report.get("status")),
+            "Error Summary": cls._vento_cell(report.get("error_summary")),
+        }
+
+    def save_vento_daily_run(self, report: Dict[str, Any]) -> Dict[str, Any]:
+        self._require_vento_ready()
+        row_data = self._vento_run_row_data(report)
+        row = [row_data.get(header, "") for header in self._vento_run_headers_current]
+        self._vento_runs_ws.append_row(row, value_input_option="RAW")
+        return row_data
+
+    def list_vento_daily_runs(self) -> List[Dict[str, Any]]:
+        self._require_vento_ready()
+        return [dict(row) for row in self._vento_runs_ws.get_all_records(default_blank="")]
+
+    def get_vento_daily_run(self, batch_id: str) -> Optional[Dict[str, Any]]:
+        target = str(batch_id or "").strip()
+        if not target:
+            return None
+        return next((row for row in self.list_vento_daily_runs() if str(row.get("Batch ID") or "").strip() == target), None)

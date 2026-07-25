@@ -1,11 +1,13 @@
 import asyncio
 import inspect
+import os
 from typing import Any, Dict, List, Set
 from urllib.parse import urlparse
 
 from core.services.lead_quality_service import rank_and_enrich_leads
 from core.services.lead_quality_gate import apply_quality_gate
 from core.services.todo_sheet_store import TodoSheetStore
+from core.services.vento.verification import parse_follower_count
 
 
 class LeadService:
@@ -193,6 +195,9 @@ class LeadService:
         - LinkedIn URL
         - same person + same company
         """
+        if str(mode or "").strip().lower() == "vento":
+            return await self._export_vento_leads(leads)
+
         await self._call_store(self.todo_store.ensure_store)
 
         existing_rows = await self._call_store(self.todo_store.list_leads)
@@ -236,10 +241,133 @@ class LeadService:
             "exported_preview": exported_leads[:5],
         }
 
+    async def _export_vento_leads(self, leads: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Save usable Plan 3 leads with simple name/contact deduplication."""
+        if not hasattr(self.todo_store, "ensure_vento_store"):
+            raise RuntimeError("Vento Sheets storage is not available")
+        await self._call_store(self.todo_store.ensure_vento_store)
+        existing_rows = await self._call_store(self.todo_store.list_vento_leads)
+
+        def keys_for(lead: Dict[str, Any]) -> Set[str]:
+            output: Set[str] = set()
+            name = self._clean(
+                lead.get("creator_name") or lead.get("business_name") or lead.get("name")
+                or lead.get("Name") or lead.get("Creator Name")
+            ).lower()
+            email = self._clean(lead.get("email") or lead.get("Email")).lower()
+            instagram = self._clean(
+                lead.get("instagram_handle") or lead.get("instagram")
+                or lead.get("Instagram") or lead.get("Instagram Handle")
+            ).lower().lstrip("@")
+            website = self._clean(lead.get("website") or lead.get("Website"))
+            domain = self._domain_from_url(website if "://" in website else f"https://{website}")
+            if name:
+                output.add(f"name:{name}")
+            if email:
+                output.add(f"email:{email}")
+            if instagram:
+                output.add(f"instagram:{instagram}")
+            if domain and domain not in {"instagram.com", "www.instagram.com", "tiktok.com", "www.tiktok.com", "linktr.ee"}:
+                output.add(f"domain:{domain.removeprefix('www.')}")
+            return output
+
+        existing_keys: Set[str] = set()
+        for row in existing_rows or []:
+            existing_keys.update(keys_for(row))
+
+        batch_keys: Set[str] = set()
+        exported: List[Dict[str, Any]] = []
+        duplicates = 0
+        rejected = 0
+        min_social_followers = self._vento_min_social_followers()
+        max_social_followers = self._vento_max_social_followers()
+        require_social_followers = self._vento_require_social_followers()
+        allow_above_max_followers = self._vento_allow_above_max_social_followers()
+        for raw in leads or []:
+            lead = dict(raw)
+            quality_level = self._clean(lead.get("quality_level") or lead.get("lead_level") or lead.get("level")).upper()
+            if lead.get("usable") is False or lead.get("rejected") is True or quality_level == "C":
+                rejected += 1
+                continue
+            if self._is_vento_creator_lead(lead):
+                follower_count = parse_follower_count(lead.get("follower_count"))
+                if (require_social_followers and follower_count is None) or (
+                    follower_count is not None and follower_count < min_social_followers
+                ) or (
+                    follower_count is not None
+                    and max_social_followers > 0
+                    and follower_count > max_social_followers
+                    and not allow_above_max_followers
+                ):
+                    rejected += 1
+                    continue
+            keys = keys_for(lead)
+            if keys.intersection(existing_keys) or keys.intersection(batch_keys):
+                duplicates += 1
+                continue
+            exported.append(lead)
+            existing_keys.update(keys)
+            batch_keys.update(keys)
+
+        if exported:
+            await self._call_store(self.todo_store.save_vento_leads, exported)
+        return {
+            "added": len(exported),
+            "duplicates_skipped": duplicates,
+            "rejected_skipped": rejected,
+            "total_processed": len(leads or []),
+            "report": {
+                "total_leads": len(leads or []),
+                "usable_leads": len(exported),
+                "with_email": sum(1 for lead in exported if lead.get("email")),
+                "with_phone": sum(1 for lead in exported if lead.get("phone")),
+                "with_instagram": sum(1 for lead in exported if lead.get("instagram_handle")),
+                "with_tiktok": sum(1 for lead in exported if lead.get("tiktok_handle")),
+                "with_website": sum(1 for lead in exported if lead.get("website")),
+            },
+            "exported_preview": exported[:5],
+        }
+
+    @staticmethod
+    def _vento_min_social_followers() -> int:
+        try:
+            return max(0, min(10_000_000, int(os.getenv("VENTO_MIN_SOCIAL_FOLLOWERS", "50000"))))
+        except (TypeError, ValueError):
+            return 50_000
+
+    @staticmethod
+    def _vento_max_social_followers() -> int:
+        try:
+            return max(0, min(100_000_000, int(os.getenv("VENTO_MAX_SOCIAL_FOLLOWERS", "500000"))))
+        except (TypeError, ValueError):
+            return 500_000
+
+    @staticmethod
+    def _vento_require_social_followers() -> bool:
+        return os.getenv("VENTO_REQUIRE_SOCIAL_FOLLOWERS", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _vento_allow_above_max_social_followers() -> bool:
+        return os.getenv("VENTO_ALLOW_ABOVE_MAX_SOCIAL_FOLLOWERS", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+    @classmethod
+    def _is_vento_creator_lead(cls, lead: Dict[str, Any]) -> bool:
+        return cls._clean(lead.get("category")).lower() == "dog_parent_influencers"
+
     async def get_existing_companies(self, mode: str = "generic") -> List[str]:
         """
         Fetch existing company names from the leads worksheet for duplicate-checking.
         """
+        if str(mode or "").strip().lower() == "vento" and hasattr(self.todo_store, "list_vento_leads"):
+            if hasattr(self.todo_store, "ensure_vento_store"):
+                await self._call_store(self.todo_store.ensure_vento_store)
+            rows = await self._call_store(self.todo_store.list_vento_leads)
+            return [
+                self._clean(row.get("Name") or row.get("Creator Name"))
+                for row in rows
+                if self._clean(row.get("Name") or row.get("Creator Name"))
+            ]
+
         await self._call_store(self.todo_store.ensure_store)
         rows = await self._call_store(self.todo_store.list_leads)
         companies: List[str] = []

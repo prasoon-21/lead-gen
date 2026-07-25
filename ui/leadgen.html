@@ -384,9 +384,38 @@
         <div class="flex p-1 bg-lv-950/50 rounded-xl border border-lv-500/10 mb-6">
           <button id="btn-mode-generic" class="flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg">GENERIC</button>
           <button id="btn-mode-velit" class="flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200">VELITCAMPING</button>
+          <button id="btn-mode-vento" class="flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200">VENTO</button>
         </div>
 
         <div class="space-y-4">
+          <!-- Isolated Vento controls; removing this panel does not affect Generic or Velit. -->
+          <div id="vento-panel" class="hidden space-y-4 rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
+            <div>
+              <label class="text-[10px] text-emerald-300/80 mb-1.5 block font-bold uppercase tracking-wider">Target Audience</label>
+              <select id="vento-category" class="field">
+                <option value="dog_parent_influencers">🐕 Dog Parent Influencers</option>
+                <option value="online_pet_businesses">🛒 Online Pet Businesses</option>
+                <option value="pet_shops">🏪 Pet Shops</option>
+                <option value="pet_grooming">✂️ Pet Grooming Shops</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] text-emerald-300/80 mb-1.5 block font-bold uppercase tracking-wider">Import Previous Leads (CSV/XLSX)</label>
+              <div class="flex items-center gap-3">
+                <label for="vento-file-input" class="px-3 py-2 rounded-xl border border-emerald-500/25 text-[10px] font-bold text-emerald-300 hover:bg-emerald-500/10 cursor-pointer">Upload CSV/XLSX</label>
+                <input id="vento-file-input" type="file" accept=".csv,.xlsx" class="hidden" />
+                <span id="vento-file-name" class="text-[10px] text-lv-500 truncate">No file selected</span>
+              </div>
+              <p class="text-[9px] text-lv-500 mt-1">Old leads are used for deduplication. Export keeps old rows in order and appends new leads.</p>
+            </div>
+            <div id="vento-batch-summary" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div class="rounded-xl bg-lv-950/30 p-2"><div class="text-[9px] text-lv-500 uppercase">Raw</div><div id="vento-metric-raw" class="font-bold">0</div></div>
+              <div class="rounded-xl bg-lv-950/30 p-2"><div class="text-[9px] text-lv-500 uppercase">Usable</div><div id="vento-metric-usable" class="font-bold text-green-300">0</div></div>
+              <div class="rounded-xl bg-lv-950/30 p-2"><div class="text-[9px] text-lv-500 uppercase">Contactable</div><div id="vento-metric-contact" class="font-bold text-sky-300">0</div></div>
+              <div class="rounded-xl bg-lv-950/30 p-2"><div class="text-[9px] text-lv-500 uppercase">Shortfall</div><div id="vento-metric-shortfall" class="font-bold text-amber-300">0</div></div>
+            </div>
+            <p class="text-[9px] leading-relaxed text-lv-500">Two-pass search: discover pet-industry candidates, then enrich every promising result with public contact details.</p>
+          </div>
           <div id="industry-wrap">
             <label class="text-[11px] text-lv-300/70 mb-2 block font-medium uppercase tracking-wider">Industry</label>
             <input id="industry-input" type="text" class="field"
@@ -566,7 +595,7 @@
           </a>
           <button id="export-xlsx-btn" title="Export all leads as a real .xlsx Excel workbook with the final CRM headers" class="px-4 py-2 rounded-xl border border-lv-500/20 text-[11px] font-medium hover:bg-lv-500/10 transition-all flex items-center gap-1.5 text-lv-200">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-            Export .XLSX
+            <span id="export-xlsx-label">Export .XLSX</span>
           </button>
           <button id="contact-export-btn" title="Export only leads containing an email, phone number, and company website as a real .xlsx Excel workbook" class="px-4 py-2 rounded-xl border border-green-500/30 bg-green-500/10 text-[11px] font-bold hover:bg-green-500/20 transition-all flex items-center gap-1.5 text-green-300">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5 2a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
@@ -596,7 +625,7 @@
         <div class="overflow-x-auto flex-1">
           <table class="w-full text-left border-collapse">
             <thead>
-              <tr class="border-b border-lv-500/10" style="background:rgba(30,30,60,.5)">
+              <tr id="leads-table-head-row" class="border-b border-lv-500/10" style="background:rgba(30,30,60,.5)">
                 <th class="px-5 py-4 w-10">
                   <input type="checkbox" id="select-all-checkbox" class="rounded border-lv-500/30 bg-lv-900/50 text-lv-500 focus:ring-lv-500/20">
                 </th>
@@ -708,11 +737,16 @@
       researching: false,
       startTime: null,
       timerInterval: null,
-      mode: 'generic', // 'generic' | 'velit'
+      mode: 'generic', // 'generic' | 'velit' | 'vento'
       theme: 'dark',
       lastRunJson: null,
       lastRunFilename: '',
       lastRunQueryPreview: [],
+      ventoAcceptedLeads: [],
+      ventoHistoryMode: false,
+      ventoHistoryFileSignature: '',
+      ventoHistoryOldRows: 0,
+      ventoCategory: 'dog_parent_influencers',
     };
 
     // ── DOM refs ─────────────────────────────────────────────────────────────
@@ -763,8 +797,17 @@
 
     const btnModeGeneric = document.getElementById('btn-mode-generic');
     const btnModeVelit   = document.getElementById('btn-mode-velit');
+    const btnModeVento   = document.getElementById('btn-mode-vento');
     const modeBadge      = document.getElementById('mode-badge');
     const industryWrap   = document.getElementById('industry-wrap');
+    const ventoPanel = document.getElementById('vento-panel');
+    const ventoCategory = document.getElementById('vento-category');
+    const ventoFileInput = document.getElementById('vento-file-input');
+    const ventoFileName = document.getElementById('vento-file-name');
+    const ventoBatchSummary = document.getElementById('vento-batch-summary');
+    const exportXlsxBtn = document.getElementById('export-xlsx-btn');
+    const contactExportBtn = document.getElementById('contact-export-btn');
+    const exportXlsxLabel = document.getElementById('export-xlsx-label');
 
     btnText.textContent = 'Generate Leads';
 
@@ -787,27 +830,66 @@
     initTheme();
 
     // ── Mode Switching ────────────────────────────────────────────────────────
+    function updateLeadTableHeaders(mode) {
+      const cells = document.querySelectorAll('#leads-table-head-row th');
+      const labels = mode === 'vento'
+        ? ['Lead', 'Social Profiles', 'Contact Details', 'Location / Niche', 'Relevance', 'Source']
+        : ['Company', 'Person / Role', 'Contact / Quality', 'Location', 'Lead Summary', 'Source URLs'];
+      labels.forEach((label, index) => { if (cells[index + 1]) cells[index + 1].textContent = label; });
+    }
+
     function setMode(mode) {
+      const previousMode = state.mode;
       state.mode = mode;
+      const activeClass = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg';
+      const inactiveClass = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200';
+      [btnModeGeneric, btnModeVelit, btnModeVento].forEach(button => { button.className = inactiveClass; });
+      ventoPanel.classList.toggle('hidden', mode !== 'vento');
+      roleInput.parentElement.classList.toggle('hidden', mode === 'vento');
       if (mode === 'generic') {
-        btnModeGeneric.className = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg';
-        btnModeVelit.className   = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200';
+        btnModeGeneric.className = activeClass;
         modeBadge.textContent = 'Generic';
         modeBadge.className = 'text-[9px] px-2 py-0.5 rounded-md bg-lv-500/10 border border-lv-500/20 text-lv-400 font-bold uppercase tracking-widest';
         industryWrap.classList.remove('hidden');
         industryInput.value = '';
-      } else {
-        btnModeVelit.className   = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all bg-lv-600 text-white shadow-lg';
-        btnModeGeneric.className = 'flex-1 py-2 text-[10px] font-bold rounded-lg transition-all text-lv-400 hover:text-lv-200';
+        if (previousMode === 'vento') { leadCountInput.max = '100'; leadCountInput.value = '15'; }
+        exportXlsxLabel.textContent = 'Export .XLSX';
+      } else if (mode === 'velit') {
+        btnModeVelit.className = activeClass;
         modeBadge.textContent = 'VelitCamping';
         modeBadge.className = 'text-[9px] px-2 py-0.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-400 font-bold uppercase tracking-widest';
         industryWrap.classList.add('hidden');
         industryInput.value = 'Van Upfitters / RV Builders';
+        if (previousMode === 'vento') { leadCountInput.max = '100'; leadCountInput.value = '15'; }
+        exportXlsxLabel.textContent = 'Export .XLSX';
+      } else {
+        btnModeVento.className = activeClass;
+        modeBadge.textContent = 'Vento';
+        modeBadge.className = 'text-[9px] px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold uppercase tracking-widest';
+        industryWrap.classList.add('hidden');
+        industryInput.value = 'Pet Industry';
+        leadCountInput.max = '200';
+        if (previousMode !== 'vento') leadCountInput.value = '50';
+        exportXlsxLabel.textContent = 'Export Vento .XLSX';
       }
+      updateLeadTableHeaders(mode);
+      renderTable();
     }
 
     btnModeGeneric.addEventListener('click', () => setMode('generic'));
     btnModeVelit.addEventListener('click', () => setMode('velit'));
+    btnModeVento.addEventListener('click', () => setMode('vento'));
+    ventoFileInput.addEventListener('change', () => {
+      ventoFileName.textContent = ventoFileInput.files?.[0]?.name || 'No file selected';
+      state.ventoHistoryMode = false;
+      state.ventoHistoryFileSignature = '';
+      state.ventoHistoryOldRows = 0;
+      if (state.mode === 'vento') exportXlsxLabel.textContent = 'Export Vento .XLSX';
+    });
+    ventoCategory.addEventListener('change', () => {
+      state.ventoCategory = ventoCategory.value;
+      if (state.mode === 'vento') updateLeadTableHeaders('vento');
+    });
 
     function escapeHtml(value) {
       return String(value || '')
@@ -1960,12 +2042,128 @@
       addLog('Webpage-only mode is active, so automatic Sheets export is skipped for this run.', 'info');
     }
 
+    function normalizeVentoLead(raw) {
+      const lead = { ...(raw || {}) };
+      lead.company_name = lead.creator_name || lead.business_name || lead.instagram_handle || lead.tiktok_handle || '—';
+      lead.company_website = lead.website || lead.instagram_url || lead.tiktok_url || lead.source_url || '';
+      lead.contact_person_name = lead.creator_name || lead.business_name || '';
+      lead.founder_name = lead.contact_person_name || '—';
+      lead.contact_person_title = lead.niche || 'Pet industry lead';
+      lead.contact_email = lead.email || '—';
+      lead.contact_phone = lead.phone || '—';
+      lead.contact_page = lead.website || '';
+      lead.industry = lead.niche || 'Pet Industry';
+      lead.specialty = lead.industry;
+      lead.quality_status = lead.usable ? 'Usable' : 'Rejected';
+      lead.quality_score = Number(lead.relevance_score || 0) * 10;
+      lead.verification_status = lead.scoring_method || 'heuristic';
+      lead.lead_summary = `${lead.company_name} — ${lead.industry}. ${lead.location || 'Location not confirmed'}. Relevance ${lead.relevance_score || 0}/10.`;
+      lead.source_details = [
+        { type: 'source', url: lead.source_url },
+        { type: 'instagram', url: lead.instagram_url },
+        { type: 'tiktok', url: lead.tiktok_url },
+        { type: 'website', url: lead.website },
+      ].filter(item => item.url);
+      return lead;
+    }
+
+    function updateVentoBatchSummary(metrics = {}) {
+      ventoBatchSummary.classList.remove('hidden');
+      document.getElementById('vento-metric-raw').textContent = metrics.raw_discovered || 0;
+      document.getElementById('vento-metric-usable').textContent = metrics.usable || 0;
+      document.getElementById('vento-metric-contact').textContent = Math.max(
+        Number(metrics.with_email || 0), Number(metrics.with_phone || 0),
+        Number(metrics.with_instagram || 0), Number(metrics.with_website || 0)
+      );
+      document.getElementById('vento-metric-shortfall').textContent = metrics.shortfall || 0;
+    }
+
+    async function runVentoSearch() {
+      const location = locationInput.value.trim();
+      const targetCount = Math.max(1, Math.min(200, Number(leadCountInput.value || 50)));
+      const file = ventoFileInput.files?.[0] || null;
+      const emptyStateMessage = document.getElementById('empty-state-message');
+      if (!location) {
+        addLog('Please enter a U.S. city, state, or region.', 'error');
+        return;
+      }
+      state.leads = [];
+      state.ventoAcceptedLeads = [];
+      state.selectedIds.clear();
+      if (emptyStateMessage) emptyStateMessage.textContent = 'Discovering and enriching Vento leads...';
+      renderTable();
+      setBusy(true);
+      startTimer();
+      startProgress();
+      addLog(`Starting Vento two-pass search for <strong>${escapeHtml(location)}</strong>: target <strong>${targetCount}</strong> usable leads.`, 'info');
+      try {
+        let response;
+        if (file) {
+          const form = new FormData();
+          form.append('file', file);
+          form.append('category', ventoCategory.value);
+          form.append('location', location);
+          form.append('target_count', String(targetCount));
+          response = await fetch('/api/vento/ingest', { method: 'POST', body: form });
+          state.ventoHistoryMode = true;
+          state.ventoHistoryFileSignature = `${file.name}|${file.size}|${file.lastModified}`;
+          exportXlsxLabel.textContent = 'Export Old + New';
+        } else {
+          state.ventoHistoryMode = false;
+          state.ventoHistoryFileSignature = '';
+          state.ventoHistoryOldRows = 0;
+          response = await fetch('/api/vento/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              category: ventoCategory.value,
+              location,
+              target_count: targetCount,
+            }),
+          });
+        }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+        state.lastRunJson = data;
+        state.lastRunFilename = `vento_run_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        viewRunJsonBtn.disabled = false;
+        downloadRunJsonBtn.disabled = false;
+        state.ventoAcceptedLeads = data.leads || [];
+        state.leads = state.ventoAcceptedLeads.map(normalizeVentoLead);
+        state.ventoCategory = data.category || ventoCategory.value;
+        if (file) {
+          state.ventoHistoryOldRows = Number(data.metrics?.old_rows || 0);
+          addLog(`Imported <strong>${state.ventoHistoryOldRows}</strong> old rows for deduplication. Only new leads are shown.`, 'success');
+        }
+        updateVentoBatchSummary({ ...(data.metrics || {}), shortfall: data.shortfall || 0 });
+        renderTable();
+        addLog(`Vento completed with <strong>${state.leads.length}</strong> usable leads. Tavily calls: <strong>${data.metrics?.tavily_calls || 0}</strong>; crawler fallback calls: <strong>${data.metrics?.fallback_search_calls || 0}</strong>.`, state.leads.length ? 'success' : 'info');
+        if (data.shortfall > 0) addLog(`The fixed Plan 3 search budget finished <strong>${data.shortfall}</strong> lead(s) below target. No contact details were invented.`, 'info');
+        if (data.storage_status === 'failed') addLog(`Leads are visible, but Sheets storage failed: ${escapeHtml(data.storage_error || 'unknown error')}`, 'error');
+        else if (data.storage_status === 'saved') addLog('Usable Vento leads were saved to the Vento Influencers worksheet.', 'success');
+        else if (data.storage_status === 'not_configured') addLog('Google Sheets is not configured yet. Leads remain available on this page and can still be exported to XLSX or JSON.', 'info');
+      } catch (error) {
+        const message = summarizeApiIssue(error.message);
+        if (emptyStateMessage) emptyStateMessage.textContent = message;
+        addLog(`Vento generation failed: ${escapeHtml(message)}`, 'error');
+      } finally {
+        setBusy(false);
+        stopTimer();
+        finishProgress();
+      }
+    }
+
     async function runLeadGen() {
       const industry = industryInput.value.trim();
       const location = locationInput.value.trim();
       const targetLeadCount = Math.max(1, Math.min(100, Number(leadCountInput.value || 15)));
       const targetRole = roleInput.value.trim();
       leadgenDebug.log('runLeadGen:start', { mode: state.mode, industry, location, targetLeadCount, targetRole });
+
+      if (state.mode === 'vento') {
+        await runVentoSearch();
+        return;
+      }
 
       if (state.mode === 'generic' && !industry) {
         leadgenDebug.warn('runLeadGen:missing_industry', { mode: state.mode });
@@ -2125,7 +2323,64 @@
       }
     }
 
+    function renderVentoTable() {
+      const emptyState = document.getElementById('empty-state');
+      const emptyStateMessage = document.getElementById('empty-state-message');
+      emptyState.classList.toggle('hidden', state.leads.length > 0);
+      [...leadsTbody.querySelectorAll('tr:not(#empty-state)')].forEach(row => row.remove());
+      if (!state.leads.length && !state.running && emptyStateMessage) {
+        emptyStateMessage.innerHTML = 'Choose a target audience and location, then click <strong class="text-emerald-400">Generate Leads</strong>.';
+      }
+      state.leads.forEach((lead) => {
+        const row = document.createElement('tr');
+        row.className = 'lead-row';
+        const identity = lead.company_name || lead.email || lead.website;
+        const socialLinks = [
+          lead.instagram_url ? `<a href="${escapeHtml(lead.instagram_url)}" target="_blank" rel="noopener" class="block text-[10px] text-pink-300 hover:text-pink-200">Instagram ${escapeHtml(lead.instagram_handle || '')}</a>` : '',
+          lead.tiktok_url ? `<a href="${escapeHtml(lead.tiktok_url)}" target="_blank" rel="noopener" class="block text-[10px] text-cyan-300 hover:text-cyan-200">TikTok ${escapeHtml(lead.tiktok_handle || '')}</a>` : '',
+        ].filter(Boolean).join('');
+        const followerLabel = lead.follower_count
+          ? `${Number(lead.follower_count).toLocaleString()} followers`
+          : 'Follower count unknown';
+        const evidenceLinks = [
+          ['Discovery', lead.source_url], ['Website', lead.website], ...((lead.scraped_urls || []).map(url => ['Scraped', url]))
+        ].filter(([, url]) => url).map(([label, url]) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="block text-[10px] text-lv-300 hover:text-white underline truncate"><span class="text-lv-500">${label}:</span> ${escapeHtml(String(url).replace(/^https?:\/\//, ''))}</a>`).join('');
+        row.innerHTML = `
+          <td class="px-5 py-4 align-top"><input type="checkbox" class="lead-checkbox rounded border-lv-500/30 bg-lv-900/50 text-emerald-500" ${state.selectedIds.has(identity) ? 'checked' : ''} data-id="${escapeHtml(identity)}"></td>
+          <td class="px-5 py-4 align-top">
+            <div class="font-bold text-white text-sm">${escapeHtml(lead.creator_name || lead.business_name || lead.company_name || '—')}</div>
+            <div class="text-[9px] text-lv-500 mt-1">${escapeHtml(String(lead.category || '').replaceAll('_', ' '))}</div>
+            <span class="inline-flex mt-2 px-2 py-1 rounded-md border border-green-500/30 bg-green-500/10 text-[9px] font-bold text-green-300">Usable</span>
+          </td>
+          <td class="px-5 py-4 align-top"><div class="space-y-1">${socialLinks || '<span class="text-[10px] text-lv-600">No public social profile found</span>'}<div class="text-[9px] text-emerald-300 mt-2">${escapeHtml(followerLabel)}</div></div></td>
+          <td class="px-5 py-4 align-top">
+            <div class="text-[11px] text-lv-200">${escapeHtml(lead.email || 'Email unavailable')}</div>
+            <div class="text-[10px] text-lv-400 mt-1">${escapeHtml(lead.phone || 'Phone unavailable')}</div>
+            ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="block text-[10px] text-emerald-300 mt-1 truncate">${escapeHtml(lead.website.replace(/^https?:\/\//, ''))}</a>` : ''}
+          </td>
+          <td class="px-5 py-4 align-top">
+            <div class="text-[11px] text-lv-200">${escapeHtml(lead.location || 'Location not confirmed')}</div>
+            <div class="text-[10px] text-lv-400 mt-2">${escapeHtml(lead.niche || 'Pet Industry')}</div>
+          </td>
+          <td class="px-5 py-4 align-top max-w-[280px]">
+            <div class="text-2xl font-black text-emerald-300">${escapeHtml(String(lead.relevance_score || 0))}<span class="text-xs text-lv-500">/10</span></div>
+            <div class="text-[9px] text-lv-500 mt-1">${escapeHtml(lead.scoring_method || 'heuristic')} scoring</div>
+          </td>
+          <td class="px-5 py-4 align-top max-w-[300px]">${evidenceLinks || '<span class="text-[10px] text-lv-600">No public source URL</span>'}</td>
+        `;
+        leadsTbody.appendChild(row);
+      });
+      leadsCount.textContent = state.leads.length;
+      usableCount.textContent = state.leads.filter(lead => lead.usable).length;
+      verifiedCount.textContent = state.leads.filter(lead => lead.email || lead.phone || lead.instagram_handle || lead.website).length;
+      updateSelectedCount();
+    }
+
     function renderTable() {
+      if (state.mode === 'vento') {
+        renderVentoTable();
+        return;
+      }
       const emptyState = document.getElementById('empty-state');
       const emptyStateMessage = document.getElementById('empty-state-message');
       emptyState.classList.toggle('hidden', state.leads.length > 0);
@@ -2367,6 +2622,11 @@
       const targetLeadCount = Math.max(1, Math.min(100, Number(leadCountInput.value || 15)));
       const targetRole = roleInput.value.trim();
       leadgenDebug.log('runLeadGen:start', { mode: state.mode, industry, location, targetLeadCount, targetRole });
+
+      if (state.mode === 'vento') {
+        await runVentoSearch();
+        return;
+      }
 
       if (state.mode === 'generic' && !industry) {
         leadgenDebug.warn('runLeadGen:missing_industry', { mode: state.mode });
@@ -2916,7 +3176,7 @@
         { header: 'Notes', value: l => firstExportValue(l.notes, l.lead_summary, l.value_proposition), keys: ['notes', 'lead_summary', 'value_proposition'] },
         { header: 'Tags', value: l => buildTagsForExport(l), keys: ['tags', 'tag'] },
         { header: 'Contact Type', value: () => 'potential customer', keys: [] },
-        { header: 'Email Status', value: l => firstExportValue(l.email_status, getEmailVerificationStatus(l)), keys: ['email_status', 'verification_status'] },
+        { header: 'Email Status', value: l => firstExportValue(l.email_status, l.email_verification_status, getEmailVerificationStatus(l)), keys: ['email_status', 'email_verification_status', 'verification_status'] },
         { header: 'Website', value: l => firstExportValue(l.company_website), keys: ['company_website'] },
         { header: 'Person LinkedIn', value: l => firstExportValue(l.linkedin_url), keys: ['linkedin_url'] },
         { header: 'Company LinkedIn', value: l => firstExportValue(l.company_linkedin_url), keys: ['company_linkedin_url'] },
@@ -2958,8 +3218,20 @@
       return false;
     }
 
+    function addWorksheetHyperlinks(worksheet, rows, rowOffset = 1) {
+      rows.forEach((row, rowIndex) => {
+        row.forEach((value, columnIndex) => {
+          const url = String(value ?? '').trim();
+          if (!/^https?:\/\//i.test(url)) return;
+          const address = XLSX.utils.encode_cell({ r: rowIndex + rowOffset, c: columnIndex });
+          if (worksheet[address]) worksheet[address].l = { Target: url, Tooltip: url };
+        });
+      });
+    }
+
     function buildWorkbookFromRows(sheetName, headers, rows) {
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      addWorksheetHyperlinks(worksheet, rows);
       worksheet['!cols'] = headers.map((header, index) => {
         const maxCellLength = rows.reduce((max, row) => Math.max(max, String(row[index] ?? '').length), String(header).length);
         return { wch: Math.max(12, Math.min(maxCellLength + 2, 48)) };
@@ -2973,6 +3245,88 @@
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
       return workbook;
+    }
+
+    function leadHasExportEmail(lead) {
+      const email = cleanExportValue(lead.contact_email || lead.email || lead.Email || lead['Email (Required)']);
+      return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email) && !isPlaceholderEmail(email);
+    }
+
+    function setExportVerificationState(isVerifying, label = '') {
+      state.exportVerifying = isVerifying;
+      if (exportXlsxBtn) exportXlsxBtn.disabled = isVerifying;
+      if (contactExportBtn) contactExportBtn.disabled = isVerifying;
+      if (exportXlsxLabel) {
+        if (isVerifying) {
+          exportXlsxLabel.textContent = label || 'Verifying emails...';
+        } else if (state.mode === 'vento') {
+          exportXlsxLabel.textContent = state.ventoHistoryMode ? 'Export Old + New' : 'Export Vento .XLSX';
+        } else {
+          exportXlsxLabel.textContent = 'Export .XLSX';
+        }
+      }
+    }
+
+    async function verifyLeadsBeforeXlsxExport(leads, contextLabel = 'Export') {
+      if (!Array.isArray(leads) || !leads.length) return [];
+
+      const emailCount = leads.filter(leadHasExportEmail).length;
+      if (!emailCount) {
+        addLog(`${contextLabel}: no email addresses found, so verification was skipped.`, 'info');
+        return leads;
+      }
+
+      const batchSize = 10;
+      const batches = Math.ceil(leads.length / batchSize);
+      addLog(
+        `Please wait. Your leads are verifying in the backend before Excel export: <strong>${emailCount}</strong> email(s), <strong>${batches}</strong> batch(es).`,
+        'info',
+      );
+
+      leads.forEach(lead => { lead.verifying = true; });
+      setExportVerificationState(true, 'Verifying emails...');
+      renderTable();
+
+      try {
+        const res = await fetch('/api/leads/verify-bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            leads,
+            batch_size: batchSize,
+            max_concurrency: 5,
+            skip_already_verified: false,
+          }),
+        });
+        const rawText = await res.text();
+        let data = {};
+        try {
+          data = rawText ? JSON.parse(rawText) : {};
+        } catch (_) {
+          throw new Error(rawText || 'Bulk verification returned an unreadable response');
+        }
+        if (!res.ok) throw new Error(data.detail || 'Bulk verification failed');
+
+        const verifiedLeads = Array.isArray(data.leads) ? data.leads : [];
+        verifiedLeads.forEach((verifiedLead, index) => {
+          if (leads[index]) Object.assign(leads[index], verifiedLead, { verifying: false });
+        });
+
+        const counts = data.summary?.status_counts || {};
+        const statusText = Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([status, count]) => `${escapeHtml(status)}: ${count}`)
+          .join(', ');
+        addLog(`Email verification finished. ${statusText || `${verifiedLeads.length} lead(s) checked`}. Preparing Excel now...`, 'success');
+        return verifiedLeads.length ? verifiedLeads : leads;
+      } catch (error) {
+        addLog(`Email verification before export failed: ${escapeHtml(summarizeApiIssue(error.message))}`, 'error');
+        return null;
+      } finally {
+        leads.forEach(lead => { lead.verifying = false; });
+        setExportVerificationState(false);
+        renderTable();
+      }
     }
 
     function exportLeadsAsCrmXlsx(leads, filename, logPrefix = 'Exported') {
@@ -2999,9 +3353,101 @@
       );
     }
 
-    document.getElementById('export-xlsx-btn').addEventListener('click', () => {
+    function exportVentoLeadsAsXlsx(leads, filename) {
+      if (!ensureXlsxExportAvailable()) return;
+      const fields = [
+        ['Name', lead => lead.creator_name || lead.business_name || lead.company_name || ''],
+        ['Category', lead => lead.category || ''],
+        ['Email', lead => lead.email || ''],
+        ['Email Status', lead => firstExportValue(lead.email_status, lead.email_verification_status, getEmailVerificationStatus(lead))],
+        ['Phone', lead => lead.phone || ''],
+        ['Website', lead => lead.website || ''],
+        ['Instagram Handle', lead => lead.instagram_handle || ''],
+        ['Instagram URL', lead => lead.instagram_url || (lead.instagram_handle ? `https://www.instagram.com/${String(lead.instagram_handle).replace(/^@/, '')}/` : '')],
+        ['TikTok Handle', lead => lead.tiktok_handle || ''],
+        ['TikTok URL', lead => lead.tiktok_url || (lead.tiktok_handle ? `https://www.tiktok.com/@${String(lead.tiktok_handle).replace(/^@/, '')}` : '')],
+        ['Location', lead => lead.location || ''],
+        ['Niche', lead => lead.niche || ''],
+        ['Relevance Score', lead => lead.relevance_score ?? ''],
+        ['Source', lead => lead.source || ''],
+        ['Status', lead => lead.status || 'New'],
+        ['Notes', lead => lead.notes || ''],
+        ['Follower Count', lead => lead.follower_count ?? ''],
+      ];
+      const headers = fields.map(([header]) => header);
+      const rows = leads.map(lead => fields.map(([, value]) => cleanExportValue(value(lead))));
+      const workbook = buildWorkbookFromRows('Vento Influencers', headers, rows);
+      XLSX.writeFile(workbook, filename, { compression: true });
+      addLog(`Exported ${leads.length} usable Vento leads.`, 'success');
+    }
+
+    async function exportMergedVentoHistory() {
+      const file = ventoFileInput.files?.[0] || null;
+      if (!file) { addLog('The original old CSV/XLSX must remain selected for the combined export.', 'error'); return; }
+      const signature = `${file.name}|${file.size}|${file.lastModified}`;
+      if (signature !== state.ventoHistoryFileSignature) {
+        addLog('The selected old file changed after discovery. Run the search again before exporting.', 'error');
+        return;
+      }
+      const newLeads = state.ventoAcceptedLeads || [];
+      if (!newLeads.length) {
+        addLog('No new leads are available to append.', 'error');
+        return;
+      }
+      if (!ensureXlsxExportAvailable()) return;
+      addLog(`Creating combined export with <strong>${state.ventoHistoryOldRows}</strong> old rows and <strong>${newLeads.length}</strong> new leads...`, 'info');
+      try {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellFormula: true, cellStyles: true });
+        const sheetName = workbook.SheetNames.includes('Vento Influencers') ? 'Vento Influencers' : workbook.SheetNames[0];
+        if (!sheetName) throw new Error('The imported file has no worksheet');
+        const existing = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+        const headers = existing.length ? existing[0].map(value => String(value || '').trim()) : [];
+        const v3Headers = ['Name', 'Category', 'Email', 'Phone', 'Website', 'Instagram Handle', 'Instagram URL', 'TikTok Handle', 'TikTok URL', 'Location', 'Niche', 'Relevance Score', 'Source', 'Status', 'Notes', 'Follower Count'];
+        if (!v3Headers.includes('Email Status')) v3Headers.splice(3, 0, 'Email Status');
+        v3Headers.forEach(header => { if (!headers.includes(header)) headers.push(header); });
+        const rows = existing.length ? [headers, ...existing.slice(1).map(row => [...row])] : [headers];
+        newLeads.forEach(lead => {
+          const values = {
+            'Name': lead.creator_name || lead.business_name || lead.company_name || '', 'Category': lead.category || '',
+            'Email': lead.email || '', 'Email Status': firstExportValue(lead.email_status, lead.email_verification_status, getEmailVerificationStatus(lead)),
+            'Phone': lead.phone || '', 'Website': lead.website || '',
+            'Instagram Handle': lead.instagram_handle || '',
+            'Instagram URL': lead.instagram_url || (lead.instagram_handle ? `https://www.instagram.com/${String(lead.instagram_handle).replace(/^@/, '')}/` : ''),
+            'TikTok Handle': lead.tiktok_handle || '',
+            'TikTok URL': lead.tiktok_url || (lead.tiktok_handle ? `https://www.tiktok.com/@${String(lead.tiktok_handle).replace(/^@/, '')}` : ''),
+            'Location': lead.location || '', 'Niche': lead.niche || '', 'Relevance Score': lead.relevance_score ?? '',
+            'Source': lead.source || '', 'Status': lead.status || 'New', 'Notes': lead.notes || '',
+            'Follower Count': lead.follower_count ?? '',
+          };
+          rows.push(headers.map(header => cleanExportValue(values[header] ?? '')));
+        });
+        workbook.Sheets[sheetName] = XLSX.utils.aoa_to_sheet(rows);
+        addWorksheetHyperlinks(workbook.Sheets[sheetName], rows.slice(1));
+        const outputName = `${file.name.replace(/\.(csv|xlsx)$/i, '')}_with_new_vento_leads.xlsx`;
+        XLSX.writeFile(workbook, outputName, { compression: true });
+        addLog(`Combined file exported: <strong>${Math.max(0, existing.length - 1)}</strong> old rows + <strong>${newLeads.length}</strong> new leads.`, 'success');
+      } catch (error) {
+        addLog(`Combined export failed: ${escapeHtml(summarizeApiIssue(error.message))}`, 'error');
+      }
+    }
+
+    exportXlsxBtn.addEventListener('click', async () => {
+      if (state.exportVerifying) return;
+      if (state.mode === 'vento' && state.ventoHistoryMode) {
+        const verifiedNewLeads = await verifyLeadsBeforeXlsxExport(state.ventoAcceptedLeads || [], 'Vento combined export');
+        if (!verifiedNewLeads) return;
+        state.ventoAcceptedLeads = verifiedNewLeads;
+        await exportMergedVentoHistory();
+        return;
+      }
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
-      exportLeadsAsCrmXlsx(state.leads, `leads_${new Date().toISOString().slice(0,10)}.xlsx`);
+      const verifiedLeads = await verifyLeadsBeforeXlsxExport(state.leads, 'Excel export');
+      if (!verifiedLeads) return;
+      if (state.mode === 'vento') {
+        exportVentoLeadsAsXlsx(verifiedLeads, `vento_influencers_${new Date().toISOString().slice(0,10)}.xlsx`);
+        return;
+      }
+      exportLeadsAsCrmXlsx(verifiedLeads, `leads_${new Date().toISOString().slice(0,10)}.xlsx`);
     });
 
     function hasCompleteContactDetails(lead) {
@@ -3023,8 +3469,17 @@
       return hasEmail && hasPhone && hasWebsite;
     }
 
-    document.getElementById('contact-export-btn').addEventListener('click', () => {
+    contactExportBtn.addEventListener('click', async () => {
+      if (state.exportVerifying) return;
       if (!state.leads.length) { addLog('No leads to export yet.', 'error'); return; }
+      if (state.mode === 'vento') {
+        const contactable = state.leads.filter(lead => lead.email || lead.phone || lead.instagram_handle || lead.tiktok_handle || lead.website);
+        if (!contactable.length) { addLog('No contactable Vento leads are visible.', 'error'); return; }
+        const verifiedContactable = await verifyLeadsBeforeXlsxExport(contactable, 'Vento contact export');
+        if (!verifiedContactable) return;
+        exportVentoLeadsAsXlsx(verifiedContactable, `vento_contactable_${new Date().toISOString().slice(0,10)}.xlsx`);
+        return;
+      }
       const contactLeads = state.leads.filter(hasCompleteContactDetails);
       if (!contactLeads.length) {
         addLog('Contact Export found no leads containing all three required fields: email, phone, and website.', 'error');
@@ -3032,10 +3487,12 @@
       }
 
       const excludedContactCount = state.leads.length - contactLeads.length;
+      const verifiedContactLeads = await verifyLeadsBeforeXlsxExport(contactLeads, 'Contact export');
+      if (!verifiedContactLeads) return;
       exportLeadsAsCrmXlsx(
-        contactLeads,
+        verifiedContactLeads,
         `contact_leads_${new Date().toISOString().slice(0, 10)}.xlsx`,
-        `Contact Export created with ${contactLeads.length} complete leads; ${excludedContactCount} incomplete leads were excluded. Exported`,
+        `Contact Export created with ${verifiedContactLeads.length} complete leads; ${excludedContactCount} incomplete leads were excluded. Exported`,
       );
     });
 
@@ -3047,6 +3504,8 @@
     });
 
     // ── Wire up ───────────────────────────────────────────────────────────────
+    btnModeVento.title = 'Vento Plan 3: Tavily discovery, per-lead enrichment, public-site scraping, and Gemini scoring';
+
     startBtn.addEventListener('click', runLeadGen);
 
     deepResBtn.addEventListener('click', runDeepResearch);
@@ -3060,7 +3519,11 @@
 
     selectAllCheck.addEventListener('change', (e) => {
       if (e.target.checked) {
-        state.leads.forEach(l => state.selectedIds.add(l.company_name));
+        state.leads.forEach(lead => state.selectedIds.add(
+          state.mode === 'vento'
+            ? (lead.creator_id || lead.company_name)
+            : lead.company_name
+        ));
       } else {
         state.selectedIds.clear();
       }
